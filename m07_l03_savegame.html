@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Saving and loading in Unreal Engine 5.8 C++: USaveGame subclasses, UGameplayStatics SaveGameToSlot/LoadGameFromSlot, slots, and what serializes.">
+    <meta name="author" content="Ray de la Paz">
+    <title>Saving &amp; Loading with SaveGame — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 7</a></li>
+            <li aria-current="page">Lesson 7.3: Saving &amp; Loading with SaveGame</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>💾 Lesson 7.3: Saving &amp; Loading with SaveGame</h1>
+                <p class="lead">Players expect to close the game and return to exactly where they left off. Unreal's SaveGame system makes this a few clean calls: define what to save as a <code>USaveGame</code> subclass, then write and read it to named slots. And it all rides on the reflection system you already understand.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Define a <code>USaveGame</code> subclass holding the data to persist</li>
+                        <li>Create, write, and read a save with <code>UGameplayStatics</code></li>
+                        <li>Check for and delete existing saves; use multiple slots</li>
+                        <li>Explain what serializes and why <code>UPROPERTY</code> matters again</li>
+                        <li>Structure a save/load flow that gathers and restores game state</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 60 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#savegame" class="toc-link">The USaveGame Object</a></li>
+                        <li><a href="#writing" class="toc-link">Writing a Save</a></li>
+                        <li><a href="#reading" class="toc-link">Reading a Save</a></li>
+                        <li><a href="#slots" class="toc-link">Slots, Existence &amp; Deletion</a></li>
+                        <li><a href="#whatsaves" class="toc-link">What Serializes</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="savegame" class="lesson-section">
+                <h2>The USaveGame Object</h2>
+                <p>A save is a <code>UObject</code> whose <code>UPROPERTY</code>s <em>are</em> the saved data. Subclass <code>USaveGame</code> and add exactly what you want persisted.</p>
+
+                <pre><code class="language-cpp">// MySaveGame.h
+#pragma once
+#include "CoreMinimal.h"
+#include "GameFramework/SaveGame.h"
+#include "MySaveGame.generated.h"
+
+UCLASS()
+class MYPROJECT_API UMySaveGame : public USaveGame
+{
+    GENERATED_BODY()
+
+public:
+    // Every UPROPERTY here is written to disk and read back.
+    UPROPERTY(VisibleAnywhere, Category = "Save")
+    int32 PlayerLevel = 1;
+
+    UPROPERTY(VisibleAnywhere, Category = "Save")
+    float PlayerHealth = 100.0f;
+
+    UPROPERTY(VisibleAnywhere, Category = "Save")
+    FVector PlayerLocation = FVector::ZeroVector;
+
+    UPROPERTY(VisibleAnywhere, Category = "Save")
+    TArray&lt;FName&gt; InventoryItems;
+
+    UPROPERTY(VisibleAnywhere, Category = "Save")
+    FString SlotDisplayName;
+};</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 The reflection system, one more payoff</h4>
+                    <p>Saving works by <strong>serializing the object's <code>UPROPERTY</code>s</strong> — the same reflection data from Lesson 2.2 that powers the editor and networking. This is the fourth payoff promised in that lesson's diagram (editor, Blueprint, serialization, networking). A member without <code>UPROPERTY</code> simply won't be saved — the reflection system can't see it, so it isn't written.</p>
+                </div>
+            </section>
+
+            <section id="writing" class="lesson-section">
+                <h2>Writing a Save</h2>
+                <p>Create the object, fill it, and write it to a named slot with <code>UGameplayStatics</code>.</p>
+
+                <pre><code class="language-cpp">#include "Kismet/GameplayStatics.h"
+#include "MySaveGame.h"
+
+void AMyGameMode::SaveGame(const FString&amp; SlotName)
+{
+    // Create a fresh save object of our class.
+    UMySaveGame* Save = Cast&lt;UMySaveGame&gt;(
+        UGameplayStatics::CreateSaveGameObject(UMySaveGame::StaticClass()));
+    if (!Save) { return; }
+
+    // Gather the state we want to persist.
+    if (APawn* Player = UGameplayStatics::GetPlayerPawn(this, 0))
+    {
+        Save->PlayerLocation = Player->GetActorLocation();
+        if (UHealthComponent* HC = Player->FindComponentByClass&lt;UHealthComponent&gt;())
+        {
+            Save->PlayerHealth = HC->GetCurrentHealth();
+        }
+    }
+    Save->PlayerLevel = CurrentLevel;
+
+    // Write to disk. UserIndex is 0 for single-player.
+    const bool bOK = UGameplayStatics::SaveGameToSlot(Save, SlotName, /*UserIndex=*/0);
+    UE_LOG(LogTemp, Log, TEXT("Save '%s' %s"), *SlotName, bOK ? TEXT("OK") : TEXT("FAILED"));
+}</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ Gather, then write</h4>
+                    <p>The pattern is always: <strong>create the save object → gather live state into it → <code>SaveGameToSlot</code></strong>. Notice the state-gathering reuses everything — <code>FindComponentByClass</code> (3.5), the health component (3.3). A save object is just a snapshot bag; your job is filling it from the running game.</p>
+                </div>
+            </section>
+
+            <section id="reading" class="lesson-section">
+                <h2>Reading a Save</h2>
+                <p>Loading mirrors saving: read the object from the slot, then apply its data back to the game.</p>
+
+                <pre><code class="language-cpp">void AMyGameMode::LoadGame(const FString&amp; SlotName)
+{
+    // Nothing to load if the slot doesn't exist.
+    if (!UGameplayStatics::DoesSaveGameExist(SlotName, 0)) { return; }
+
+    UMySaveGame* Save = Cast&lt;UMySaveGame&gt;(
+        UGameplayStatics::LoadGameFromSlot(SlotName, 0));
+    if (!Save) { return; }
+
+    // Apply the loaded data back to the live game.
+    CurrentLevel = Save->PlayerLevel;
+    if (APawn* Player = UGameplayStatics::GetPlayerPawn(this, 0))
+    {
+        Player->SetActorLocation(Save->PlayerLocation);
+        if (UHealthComponent* HC = Player->FindComponentByClass&lt;UHealthComponent&gt;())
+        {
+            HC->SetHealth(Save->PlayerHealth);   // the guarded setter from Lesson 6.2
+        }
+    }
+}</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Always guard the load</h4>
+                    <p><code>LoadGameFromSlot</code> returns <code>nullptr</code> if the slot is missing or corrupt, so check <code>DoesSaveGameExist</code> first and <code>Cast</code> defensively. Loading a save whose class changed (you added/removed fields) is usually tolerated — missing fields default, extra saved fields are ignored — but a version mismatch can surprise you, so consider a version <code>int32</code> in your save for migrations.</p>
+                </div>
+            </section>
+
+            <section id="slots" class="lesson-section">
+                <h2>Slots, Existence &amp; Deletion</h2>
+                <p>Saves are addressed by a <strong>slot name</strong> (a string) plus a user index. Different slot names give you multiple save files — quicksave, autosave, manual slots.</p>
+
+                <pre><code class="language-cpp">// Multiple named slots:
+SaveGame(TEXT("AutoSave"));
+SaveGame(TEXT("QuickSave"));
+SaveGame(TEXT("Slot_01"));
+
+// Does a slot exist? (e.g. to enable a "Continue" button)
+const bool bHasSave = UGameplayStatics::DoesSaveGameExist(TEXT("AutoSave"), 0);
+
+// Delete a slot:
+UGameplayStatics::DeleteGameInSlot(TEXT("Slot_01"), 0);</code></pre>
+
+                <div class="mermaid">
+                    graph LR
+                        Game["Running game"] -->|"gather → SaveGameToSlot('Slot_01')"| Disk["Slot_01 on disk"]
+                        Disk -->|"LoadGameFromSlot('Slot_01') → apply"| Game
+                </div>
+                <figure>
+                    <figcaption>Figure 1: The round trip. Gather state into a USaveGame, write it to a named slot; later read it back and apply. Each slot name is an independent save file.</figcaption>
+                </figure>
+
+                <div class="card card-success">
+                    <h4>✅ Long saves can go async</h4>
+                    <p>For large saves, the synchronous calls can hitch a frame. Unreal also offers <strong>async</strong> variants (<code>AsyncSaveGameToSlot</code> / <code>AsyncLoadGameFromSlot</code>) that take a delegate called on completion — pairing nicely with the async concepts in Module 11. For small saves the synchronous calls are fine.</p>
+                </div>
+            </section>
+
+            <section id="whatsaves" class="lesson-section">
+                <h2>What Serializes</h2>
+                <p>The rules mirror what crosses the Blueprint boundary (Lesson 6.3), because both ride reflection:</p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Saves cleanly ✅</th><th>Needs care ⚠️</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>Primitives, <code>FString</code>/<code>FName</code>/<code>FText</code></td><td>Raw <code>UObject*</code> — saves a reference, not the object's data</td></tr>
+                            <tr><td><code>FVector</code>, structs of savable fields</td><td>Actor pointers — usually don't survive a fresh session</td></tr>
+                            <tr><td><code>TArray</code>/<code>TMap</code> of savable types</td><td>Non-<code>UPROPERTY</code> members — never saved</td></tr>
+                            <tr><td><code>TSubclassOf</code>, enums</td><td>Live gameplay object graphs — save IDs, re-spawn on load</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card card-accent">
+                    <h4>📖 Save data, not live objects</h4>
+                    <p>Don't try to save pointers to live actors — on load, those actors don't exist yet. Instead save the <em>data needed to recreate them</em>: an enemy's <code>FName</code> id and transform, then re-spawn it on load using the DataTable lookup from Lesson 7.1. Think of a save as a recipe to rebuild the world, not a photograph of live memory.</p>
+                </div>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: A checkpoint system</h3>
+                    <p><strong>Objective:</strong> Implement a minimal autosave.</p>
+                    <ol>
+                        <li>Define <code>UCheckpointSave : public USaveGame</code> with the player's location, health, and an <code>int32 CheckpointIndex</code>.</li>
+                        <li>On a checkpoint trigger (overlap, Lesson 5.1), gather state and <code>SaveGameToSlot(TEXT("Checkpoint"))</code>.</li>
+                        <li>On game start, if <code>DoesSaveGameExist(TEXT("Checkpoint"))</code>, load and apply it.</li>
+                        <li>Why do you save the player's <em>location</em> rather than a pointer to the player actor?</li>
+                    </ol>
+
+                    <details>
+                        <summary>✅ Answer</summary>
+                        <p>Because the player actor from the previous session no longer exists when you load — a saved pointer would be meaningless. Saving the location (plain data) lets you place the freshly-spawned player pawn back where they were. Save the data to reconstruct state, never live object references.</p>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> What determines which data gets saved in a <code>USaveGame</code>?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — its UPROPERTY members are serialized; non-UPROPERTY members aren't.">A) Its <code>UPROPERTY</code> members</button>
+                            <button class="quiz-option" data-correct="false" data-hint="All members aren't saved — only reflected ones.">B) Every C++ member, reflected or not</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Ticking is unrelated.">C) Whatever changed since last frame</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> Before <code>LoadGameFromSlot</code>, you should:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — check DoesSaveGameExist and null-check the result.">A) Check <code>DoesSaveGameExist</code> and null-check the returned object</button>
+                            <button class="quiz-option" data-correct="false" data-hint="It can return null.">B) Assume it always succeeds</button>
+                            <button class="quiz-option" data-correct="false" data-hint="No such requirement.">C) Delete the slot first</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> To persist enemies present in a level, you should save:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — save data (ids + transforms) and re-spawn on load.">A) Their ids and transforms, then re-spawn them on load</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Live pointers don't survive to the next session.">B) Raw pointers to the enemy actors</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Config isn't for per-save progress.">C) Them in a config ini</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li>A save is a <code>USaveGame</code> subclass whose <strong><code>UPROPERTY</code> members are the persisted data</strong> — saving rides the reflection system.</li>
+                        <li>Write: <code>CreateSaveGameObject</code> → gather state → <code>SaveGameToSlot(Save, SlotName, UserIndex)</code>.</li>
+                        <li>Read: <code>DoesSaveGameExist</code> → <code>LoadGameFromSlot</code> → <code>Cast</code> → apply data back (guard every step).</li>
+                        <li>Slots are named strings; use <code>DoesSaveGameExist</code>/<code>DeleteGameInSlot</code>; async variants exist for large saves.</li>
+                        <li>Save <strong>data to rebuild the world</strong> (ids, transforms), not live object pointers.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/saving-and-loading-your-game-in-unreal-engine" target="_blank" rel="noopener">Saving and Loading Your Game (Epic)</a></li>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/Kismet/UGameplayStatics" target="_blank" rel="noopener">UGameplayStatics API (Epic)</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p>Data, config, saves — all persisted. The module's finale is about <em>runtime</em> global systems: <strong>Subsystems</strong>, Unreal's clean, lifetime-managed replacement for singletons — the right home for a save manager, an inventory service, or a music director.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Lesson complete!</h3>
+                    <p>Progress persists. Now let's give your systems a proper home.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m07_l02_config_properties.html" class="prev-lesson">← Previous: Config Properties &amp; .ini Files</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m07_l04_subsystems.html" class="next-lesson">Next: Subsystems — The Modern Singleton →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

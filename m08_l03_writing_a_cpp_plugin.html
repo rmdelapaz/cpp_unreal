@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Writing a C++ plugin in Unreal Engine 5.8: the .uplugin descriptor, plugin modules, structure, creating one, and when to use a plugin over a module.">
+    <meta name="author" content="Ray de la Paz">
+    <title>Writing a C++ Plugin — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 8</a></li>
+            <li aria-current="page">Lesson 8.3: Writing a C++ Plugin</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>🔌 Lesson 8.3: Writing a C++ Plugin</h1>
+                <p class="lead">A plugin is a self-contained bundle of modules, content, and assets you can drop into <em>any</em> project — enable it and its features appear. It's how you build reusable systems, share code across your games, and (if you like) publish to the marketplace. And it's built entirely from the module concepts you just learned.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Explain what a plugin is and how it differs from a bare module</li>
+                        <li>Read a <code>.uplugin</code> descriptor and its module list</li>
+                        <li>Describe a plugin's folder structure</li>
+                        <li>Create a plugin with the editor's plugin wizard</li>
+                        <li>Decide when a plugin beats a module, and enable/disable plugins</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 60 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#what" class="toc-link">Plugin vs Module</a></li>
+                        <li><a href="#structure" class="toc-link">Plugin Structure</a></li>
+                        <li><a href="#uplugin" class="toc-link">The .uplugin Descriptor</a></li>
+                        <li><a href="#creating" class="toc-link">Creating a Plugin</a></li>
+                        <li><a href="#when" class="toc-link">When to Use One</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="what" class="lesson-section">
+                <h2>Plugin vs Module</h2>
+                <p>A module (Lesson 8.1) is a unit of compiled C++ inside a project. A <strong>plugin</strong> is a portable package that <em>contains</em> one or more modules, plus its own content, assets, and descriptor — and can be moved between projects as a folder.</p>
+
+                <div class="mermaid">
+                    graph TD
+                        P["Plugin (MyInventorySystem)"] --> M1["Module: MyInventorySystem (Runtime)"]
+                        P --> M2["Module: MyInventoryEditor (Editor)"]
+                        P --> C["Content/ (its own assets)"]
+                        P --> D[".uplugin descriptor"]
+                </div>
+                <figure>
+                    <figcaption>Figure 1: A plugin bundles modules, content, and a descriptor into one portable unit. Copy the plugin folder into another project, enable it, and everything comes along.</figcaption>
+                </figure>
+
+                <div class="card card-accent">
+                    <h4>📖 The key difference: portability &amp; toggling</h4>
+                    <p>A project module lives in <em>that project</em>. A plugin is <strong>self-contained and toggleable</strong> — enable/disable it in the Plugins browser, ship it independently, reuse it across every game you make. You've already used many: Enhanced Input, and (from your own course) the Unreal MCP plugin are exactly this — bundled modules you enable. Now you build your own.</p>
+                </div>
+            </section>
+
+            <section id="structure" class="lesson-section">
+                <h2>Plugin Structure</h2>
+                <p>Plugins live in a <code>Plugins/</code> folder (project-level or engine-level). Each plugin is a folder mirroring a mini-project:</p>
+
+                <pre><code class="language-text">Plugins/
+└── MyInventorySystem/
+    ├── MyInventorySystem.uplugin      # the descriptor (metadata + module list)
+    ├── Source/
+    │   └── MyInventorySystem/
+    │       ├── MyInventorySystem.Build.cs
+    │       ├── Public/                 # the plugin's API (Lesson 8.1)
+    │       │   └── InventorySubsystem.h
+    │       └── Private/
+    │           └── InventorySubsystem.cpp
+    ├── Content/                        # optional: the plugin's own assets
+    └── Resources/                      # icon, etc.</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ It's modules all the way down</h4>
+                    <p>Notice the <code>Source/</code>, <code>Build.cs</code>, and <code>Public/Private</code> layout — identical to Lesson 8.1. A plugin is <em>modules plus a descriptor plus a home for content</em>. Everything you learned about modules applies directly; the plugin just wraps them for portability. The <code>Public/Private</code> split especially matters here, since a plugin's public headers are the API other projects consume.</p>
+                </div>
+            </section>
+
+            <section id="uplugin" class="lesson-section">
+                <h2>The .uplugin Descriptor</h2>
+                <p>The <code>.uplugin</code> file is JSON that describes the plugin and lists its modules — the plugin equivalent of the <code>Modules</code> section in a <code>.uproject</code> (Lesson 8.1).</p>
+
+                <pre><code class="language-json">{
+    "FileVersion": 3,
+    "Version": 1,
+    "VersionName": "1.0",
+    "FriendlyName": "My Inventory System",
+    "Description": "A reusable inventory subsystem.",
+    "Category": "Gameplay",
+    "CreatedBy": "Ray de la Paz",
+    "EnabledByDefault": true,
+    "CanContainContent": true,
+    "Modules": [
+        {
+            "Name": "MyInventorySystem",
+            "Type": "Runtime",
+            "LoadingPhase": "Default"
+        },
+        {
+            "Name": "MyInventoryEditor",
+            "Type": "Editor",
+            "LoadingPhase": "PostEngineInit"
+        }
+    ]
+}</code></pre>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Field</th><th>Meaning</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>FriendlyName</code> / <code>Description</code></td><td>Shown in the Plugins browser</td></tr>
+                            <tr><td><code>CanContainContent</code></td><td>Whether the plugin ships its own assets</td></tr>
+                            <tr><td><code>Modules</code></td><td>The modules it contains, with <code>Type</code> &amp; <code>LoadingPhase</code> (Lesson 8.1)</td></tr>
+                            <tr><td><code>Plugins</code> (optional)</td><td>Other plugins this one depends on</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card card-accent">
+                    <h4>📖 Runtime + Editor module split</h4>
+                    <p>A well-structured plugin often has a <strong>Runtime</strong> module (ships in the game) and a separate <strong>Editor</strong> module (tools, custom asset editors — never shipped). Same target-type separation as Lesson 8.1, now inside a portable package. This keeps editor-only code out of your packaged game automatically.</p>
+                </div>
+            </section>
+
+            <section id="creating" class="lesson-section">
+                <h2>Creating a Plugin</h2>
+                <p>You rarely write the boilerplate by hand — the editor generates it. From <strong>Edit → Plugins → Add (or "+ Create Plugin") → choose a template</strong> (Blank, Blank with content, Editor Toolbar Button, etc.), name it, and Unreal scaffolds the <code>.uplugin</code>, <code>Source/</code>, module class, and build file.</p>
+
+                <p>The generated module implements <code>IModuleInterface</code> (Lesson 8.1) so you have startup/shutdown hooks:</p>
+
+                <pre><code class="language-cpp">// MyInventorySystem.cpp — generated plugin module.
+#include "MyInventorySystem.h"
+#include "Modules/ModuleManager.h"
+
+#define LOCTEXT_NAMESPACE "FMyInventorySystemModule"
+
+void FMyInventorySystemModule::StartupModule()
+{
+    // Plugin loaded — register any plugin-wide systems here.
+}
+
+void FMyInventorySystemModule::ShutdownModule()
+{
+    // Plugin unloading — clean up.
+}
+
+#undef LOCTEXT_NAMESPACE
+
+IMPLEMENT_MODULE(FMyInventorySystemModule, MyInventorySystem)</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Enable it, and regenerate</h4>
+                    <p>After creating (or copying in) a plugin, make sure it's <strong>enabled</strong> in the Plugins browser and listed in your <code>.uproject</code>'s <code>Plugins</code> section, then <strong>regenerate project files</strong> and rebuild (Lesson 1.3). A plugin whose modules aren't building is almost always disabled or not regenerated — the same fix as most module issues.</p>
+                </div>
+            </section>
+
+            <section id="when" class="lesson-section">
+                <h2>When to Use One</h2>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Use a plugin when…</th><th>A plain module is enough when…</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>You'll reuse the system across multiple projects</td><td>The code is specific to this one project</td></tr>
+                            <tr><td>You want it toggleable / optional</td><td>It's always part of the game</td></tr>
+                            <tr><td>It ships its own content/assets</td><td>It's pure gameplay code in the main module</td></tr>
+                            <tr><td>You'll share or sell it (marketplace)</td><td>It stays internal</td></tr>
+                            <tr><td>You want a clean, isolated feature boundary</td><td>Tight coupling with game code is fine</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <blockquote>
+                    <strong>💡 The reuse test:</strong> "Would I want this in my <em>next</em> game too?" If yes, build it as a plugin from the start — retrofitting a project module into a plugin later is more work than starting clean. A well-factored inventory, dialogue, or ability system is a natural plugin; a specific boss's AI is not.</blockquote>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: Package the inventory</h3>
+                    <p><strong>Objective:</strong> Plan turning the inventory subsystem (Lesson 7.4) into a reusable plugin.</p>
+                    <ol>
+                        <li>Sketch the plugin folder structure for <code>InventoryPlugin</code> containing the <code>UInventorySubsystem</code>.</li>
+                        <li>Which folder does <code>InventorySubsystem.h</code> go in so other projects can use it, and why?</li>
+                        <li>Would you add a second Editor module? What might it hold?</li>
+                        <li>What's the "reuse test" answer that justifies making this a plugin?</li>
+                    </ol>
+
+                    <details>
+                        <summary>✅ Answers</summary>
+                        <ul>
+                            <li>Structure: <code>Plugins/InventoryPlugin/</code> with <code>.uplugin</code>, <code>Source/InventoryPlugin/{Build.cs, Public/, Private/}</code>, optional <code>Content/</code>.</li>
+                            <li><code>InventorySubsystem.h</code> → <code>Public/</code>, so dependent projects/modules can include it (Lesson 8.1 Public API).</li>
+                            <li>An Editor module could hold a custom inventory editor window or a DataAsset editor — editor-only, never shipped.</li>
+                            <li>Inventory is a system you'd want in many games → yes, a plugin from the start.</li>
+                        </ul>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> How does a plugin differ from a plain module?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — a plugin bundles modules + content + descriptor into a portable, toggleable unit.">A) It bundles modules, content, and a descriptor into a portable, toggleable package</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Plugins contain modules, not the reverse.">B) A module contains many plugins</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Both are C++.">C) Plugins can't contain C++</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> What does the <code>.uplugin</code> file contain?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — JSON metadata plus the plugin's module list.">A) JSON metadata and the plugin's module list</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Compiled binaries aren't in the descriptor.">B) The compiled plugin binary</button>
+                            <button class="quiz-option" data-correct="false" data-hint="It's not C++ source.">C) All the plugin's C++ source inline</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> A system you want reusable across several of your games is best built as:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — reuse across projects is the classic plugin case.">A) A plugin</button>
+                            <button class="quiz-option" data-correct="false" data-hint="A project module is tied to one project.">B) A project-only module</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Not a reuse mechanism.">C) A single giant actor</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li>A <strong>plugin</strong> bundles one or more modules, optional content, and a <code>.uplugin</code> descriptor into a <strong>portable, toggleable</strong> unit.</li>
+                        <li>Its structure mirrors a module (<code>Source/</code>, <code>Build.cs</code>, <code>Public/Private</code>) plus <code>Content/</code> and the descriptor — modules all the way down.</li>
+                        <li>The <code>.uplugin</code> JSON lists modules with <code>Type</code>/<code>LoadingPhase</code>; a common split is a <strong>Runtime</strong> module + an <strong>Editor</strong> module.</li>
+                        <li>Create with the <strong>plugin wizard</strong>; enable it in the Plugins browser and regenerate project files.</li>
+                        <li>Reach for a plugin when a system is <strong>reusable, toggleable, or shippable</strong>; a plain module suffices for project-specific code.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/plugins-in-unreal-engine" target="_blank" rel="noopener">Plugins (Epic)</a></li>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/plugin-descriptor-file-reference-for-unreal-engine" target="_blank" rel="noopener">Plugin Descriptor Reference (Epic)</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p><strong>Module 8 is complete</strong> — you can structure, extend, and package C++ at the project level. <strong>Module 9</strong> returns to gameplay-facing work: driving <strong>UMG user interface</strong> from C++, so your HUDs and menus are code you control.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Module 8 complete!</h3>
+                    <p>Your code is organized, extensible, and packageable. Let's build some UI.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m08_l02_third_party_libraries.html" class="prev-lesson">← Previous: Integrating Third-Party Libraries</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m09_l01_userwidget_in_cpp.html" class="next-lesson">Next: UserWidget &amp; UMG in C++ →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

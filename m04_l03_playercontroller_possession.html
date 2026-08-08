@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="PlayerController and possession in Unreal Engine 5.8 C++: what the controller owns, Possess/UnPossess, OnPossess, and where input setup really belongs.">
+    <meta name="author" content="Ray de la Paz">
+    <title>PlayerController &amp; Possession — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 4</a></li>
+            <li aria-current="page">Lesson 4.3: PlayerController &amp; Possession</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>🕹️ Lesson 4.3: PlayerController &amp; Possession</h1>
+                <p class="lead">The Pawn is the body; the PlayerController is the brain. Understanding what belongs on which — and how a controller <em>possesses</em> a pawn — resolves a surprising number of "where does this code go?" questions and unlocks mechanics like swapping bodies.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>State what the PlayerController owns vs what the Pawn owns</li>
+                        <li>Explain possession and use <code>Possess</code> / <code>UnPossess</code></li>
+                        <li>Override <code>OnPossess</code> and choose where to set up input</li>
+                        <li>Get from controller to pawn and back (<code>GetPawn</code>, <code>GetController</code>)</li>
+                        <li>Implement swapping which pawn a player controls</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 45 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#who-owns" class="toc-link">Who Owns What</a></li>
+                        <li><a href="#possession" class="toc-link">Possession</a></li>
+                        <li><a href="#onpossess" class="toc-link">OnPossess &amp; Input Setup</a></li>
+                        <li><a href="#navigate" class="toc-link">Navigating Brain ↔ Body</a></li>
+                        <li><a href="#swap" class="toc-link">Swapping Pawns</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="who-owns" class="lesson-section">
+                <h2>Who Owns What</h2>
+                <p>The Pawn/Controller split (Lesson 3.1) becomes practical here. As a rule: <strong>things tied to the <em>body</em> live on the Pawn; things tied to the <em>player</em> live on the Controller.</strong></p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>PlayerController (the player)</th><th>Pawn/Character (the body)</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>Which pawn is possessed</td><td>Mesh, collision, movement</td></tr>
+                            <tr><td>Player-facing UI / HUD</td><td>Body-specific abilities &amp; stats</td></tr>
+                            <tr><td>Input mode (game vs UI), mouse cursor</td><td>Animation state</td></tr>
+                            <tr><td>Camera management (can override)</td><td>The camera components themselves</td></tr>
+                            <tr><td>Persistent-per-session player logic</td><td>Everything that dies with the body</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card card-accent">
+                    <h4>📖 The durability test</h4>
+                    <p>Ask: "should this survive the body dying and respawning?" If yes (score, which team, UI), it belongs on the <strong>Controller</strong> (or PlayerState for replicated data — Lesson 3.1). If it dies with the body (health, ammo in the gun, ragdoll), it belongs on the <strong>Pawn</strong>. Same durability principle as Pawn-vs-PlayerState.</p>
+                </div>
+            </section>
+
+            <section id="possession" class="lesson-section">
+                <h2>Possession</h2>
+                <p><strong>Possession</strong> is the act of a controller taking control of a pawn. When a controller possesses a pawn, input routes to it, the controller's rotation drives the pawn's aim, and the two are linked until <code>UnPossess</code>.</p>
+
+                <div class="mermaid">
+                    graph LR
+                        PC["APlayerController"] -->|Possess pawn| P1["Pawn A"]
+                        PC -.UnPossess.-> P1
+                        PC -->|Possess another| P2["Pawn B"]
+                </div>
+                <figure>
+                    <figcaption>Figure 1: A controller possesses one pawn at a time. Un-possessing A and possessing B is exactly how you make a player leave one body and enter another.</figcaption>
+                </figure>
+
+                <pre><code class="language-cpp">// From the controller, take control of a pawn:
+void AMyPlayerController::TakeControlOf(APawn* NewPawn)
+{
+    if (!NewPawn) { return; }
+
+    UnPossess();          // release the current pawn (if any)
+    Possess(NewPawn);     // possess the new one — input now routes here
+}</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Possession is server-authoritative</h4>
+                    <p>In multiplayer, <code>Possess</code> must be called <strong>on the server</strong> — it's an authority operation, and the result replicates to clients. Calling it on a client does nothing meaningful. We'll revisit authority in Module 10; for single-player it "just works," but build the habit of thinking of possession as a server action.</p>
+                </div>
+            </section>
+
+            <section id="onpossess" class="lesson-section">
+                <h2>OnPossess &amp; Input Setup</h2>
+                <p>The controller's <code>OnPossess</code> fires when it takes a pawn — a reliable hook for per-pawn setup. This is also the cleanest place to add the Enhanced Input mapping context (an alternative to the pawn's <code>BeginPlay</code> from Lesson 4.1), because the controller is guaranteed to exist and own the local player here.</p>
+
+                <pre><code class="language-cpp">#include "EnhancedInputSubsystems.h"
+
+void AMyPlayerController::OnPossess(APawn* InPawn)
+{
+    Super::OnPossess(InPawn);   // always call Super — it does the real possession work
+
+    // Add the mapping context here: the controller + local player are ready.
+    if (UEnhancedInputLocalPlayerSubsystem* Subsystem =
+            ULocalPlayer::GetSubsystem&lt;UEnhancedInputLocalPlayerSubsystem&gt;(GetLocalPlayer()))
+    {
+        Subsystem->AddMappingContext(DefaultMappingContext, 0);
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("Now possessing %s"), *InPawn->GetName());
+}</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 Two valid homes for input setup</h4>
+                    <p>Adding the mapping context in the <strong>pawn's <code>BeginPlay</code></strong> (Lesson 4.1) is common and fine. Doing it in the <strong>controller's <code>OnPossess</code></strong> is arguably cleaner: context lives with the player, and it re-applies correctly whenever the player takes a new body. Either works — just be consistent. The action <em>bindings</em> stay in the pawn's <code>SetupPlayerInputComponent</code> regardless.</p>
+                </div>
+
+                <div class="card card-success">
+                    <h4>✅ Remember EndPlay / UnPossess cleanup</h4>
+                    <p>If you add a context on possess, consider removing it on <code>OnUnPossess</code> so a swapped-away body doesn't leave stale mappings. Symmetric setup/teardown (Lesson 2.6's <code>EndPlay</code> discipline) keeps behavior predictable when bodies change.</p>
+                </div>
+            </section>
+
+            <section id="navigate" class="lesson-section">
+                <h2>Navigating Brain ↔ Body</h2>
+                <p>You constantly need to hop between the two. The key accessors:</p>
+
+                <pre><code class="language-cpp">// From the CONTROLLER → its pawn:
+APawn* MyPawn = GetPawn();                       // generic
+AMyCharacter* MyChar = Cast&lt;AMyCharacter&gt;(GetPawn());  // specific
+
+// From the PAWN → its controller:
+AController* Ctrl = GetController();
+APlayerController* PC = Cast&lt;APlayerController&gt;(GetController());  // human?
+
+// From either, up to the PlayerState (durable per-player data, Lesson 3.1):
+APlayerState* PS = GetPlayerState&lt;APlayerState&gt;();</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ These can be null — check</h4>
+                    <p><code>GetController()</code> on a pawn returns null when nothing possesses it (e.g. before possession, or an unpossessed body). <code>GetPawn()</code> is null when a controller holds no pawn. Every one of these needs a null/<code>IsValid</code> check before use — the exact discipline from Module 2. AI-possessed pawns return an <code>AAIController</code>, so a <code>Cast&lt;APlayerController&gt;</code> can legitimately fail.</p>
+                </div>
+            </section>
+
+            <section id="swap" class="lesson-section">
+                <h2>Swapping Pawns</h2>
+                <p>Here's the payoff of the separation: because control is possession, "leave your character and take over the turret" is just an unpossess-then-possess. The player's identity (Controller, PlayerState) stays put; only the body changes.</p>
+
+                <pre><code class="language-cpp">// Player presses "interact" near a turret; the turret asks the controller to swap.
+void AMyPlayerController::EnterTurret(APawn* Turret)
+{
+    // Remember the body we're leaving so we can return to it later.
+    PreviousPawn = GetPawn();     // UPROPERTY() or TWeakObjectPtr — GC-safe (Lesson 2.5)
+
+    Possess(Turret);              // UnPossess of the old happens automatically on Possess
+}
+
+void AMyPlayerController::ExitTurret()
+{
+    if (IsValid(PreviousPawn))
+    {
+        Possess(PreviousPawn);    // hop back into the original body
+    }
+}</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ Why this is elegant</h4>
+                    <p>No copying of score, no re-creating UI, no losing player identity — all of that lives on the durable Controller/PlayerState, untouched by the body swap. This is the concrete reward for the "body and brain are separate" design you learned back in Lesson 3.1. Store <code>PreviousPawn</code> as a <code>UPROPERTY</code>/<code>TWeakObjectPtr</code> so the GC doesn't collect the body you plan to return to.</p>
+                </div>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: Place the responsibilities</h3>
+                    <p><strong>Objective:</strong> Decide Controller vs Pawn for each, then sketch a possession swap.</p>
+                    <ol>
+                        <li>The pause menu widget</li>
+                        <li>The character's current ammo</li>
+                        <li>Whether the mouse cursor is shown</li>
+                        <li>The ragdoll physics on death</li>
+                        <li>Write the two calls that move the player from their character into a nearby vehicle pawn and store the way back.</li>
+                    </ol>
+
+                    <details>
+                        <summary>✅ Answers</summary>
+                        <ul>
+                            <li><strong>1.</strong> Controller (player-facing UI).</li>
+                            <li><strong>2.</strong> Pawn (dies with the body).</li>
+                            <li><strong>3.</strong> Controller (input mode / cursor).</li>
+                            <li><strong>4.</strong> Pawn (body-specific).</li>
+                            <li><strong>5.</strong> <code>PreviousPawn = GetPawn();</code> then <code>Possess(Vehicle);</code> — and <code>Possess(PreviousPawn)</code> to return.</li>
+                        </ul>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> Where should a player's HUD/UI logic live?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — UI is player-facing and belongs on the PlayerController.">A) The PlayerController</button>
+                            <button class="quiz-option" data-correct="false" data-hint="That dies with the body.">B) The Pawn</button>
+                            <button class="quiz-option" data-correct="false" data-hint="That's server-only rules.">C) The GameMode</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> Which pair swaps a player from one body to another?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — possession is how a controller changes bodies.">A) <code>UnPossess</code> / <code>Possess</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="That destroys actors.">B) <code>Destroy</code> / <code>SpawnActor</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="Attachment isn't control.">C) <code>AttachToComponent</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> A pawn's <code>GetController()</code> returns null. What's a valid reason?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — an unpossessed pawn has no controller.">A) Nothing currently possesses the pawn</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Pawns always can be possessed.">B) Pawns never have controllers</button>
+                            <button class="quiz-option" data-correct="false" data-hint="It compiles fine.">C) It's a compile error</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li><strong>Controller = player</strong> (UI, input mode, which pawn, durable logic); <strong>Pawn = body</strong> (mesh, movement, body stats). Use the "does it survive respawn?" test.</li>
+                        <li><strong>Possession</strong> links a controller to a pawn: <code>Possess</code> / <code>UnPossess</code>; it's a <strong>server-authoritative</strong> operation.</li>
+                        <li>Override <code>OnPossess</code> (call <code>Super</code>) for per-pawn setup; it's a clean home for the Enhanced Input mapping context, while <em>bindings</em> stay in the pawn's <code>SetupPlayerInputComponent</code>.</li>
+                        <li>Navigate with <code>GetPawn</code> / <code>GetController</code> / <code>GetPlayerState&lt;T&gt;</code> — all nullable, always checked.</li>
+                        <li>Swapping bodies is just <code>Possess</code>-ing another pawn; player identity on the Controller/PlayerState stays intact (store the return body GC-safely).</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/player-controllers-in-unreal-engine" target="_blank" rel="noopener">Player Controllers (Epic)</a></li>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/possessing-pawns-in-unreal-engine" target="_blank" rel="noopener">Possessing Pawns (Epic)</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p><strong>Module 4 is complete</strong> — you have a controllable player, wired from key to movement to possession. <strong>Module 5</strong> makes the world react: collision and overlaps, traces, timers, delegates, and interfaces — the interaction toolkit.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Module 4 complete!</h3>
+                    <p>A player drives your game. Now let's make the world push back.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m04_l02_pawns_characters_movement.html" class="prev-lesson">← Previous: Pawns, Characters &amp; Movement</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m05_l01_collision_overlap_hit.html" class="next-lesson">Next: Collision, Overlaps &amp; Hit Events →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

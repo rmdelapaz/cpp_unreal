@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Writing AActor subclasses in Unreal Engine 5.8 C++: subobjects, the component hierarchy, and the actor lifecycle — constructor, BeginPlay, Tick, EndPlay.">
+    <meta name="author" content="Ray de la Paz">
+    <title>Writing Actors in C++ — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 3</a></li>
+            <li aria-current="page">Lesson 3.2: Writing Actors in C++</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>🎭 Lesson 3.2: Writing Actors in C++</h1>
+                <p class="lead">Now the real craft begins. You'll build an actor from scratch — assembling its components in the constructor, wiring a hierarchy, and hooking into each stage of its life. This is the pattern behind nearly everything you'll make in Unreal.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Build an actor's components with <code>CreateDefaultSubobject</code> and set a root</li>
+                        <li>Assemble a component hierarchy via attachment</li>
+                        <li>Explain the actor lifecycle and what belongs in each stage</li>
+                        <li>Use the constructor, <code>BeginPlay</code>, <code>Tick</code>, and <code>EndPlay</code> correctly</li>
+                        <li>Know why "constructor for setup, BeginPlay for gameplay" matters</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 60 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#subobjects" class="toc-link">Components &amp; the Root</a></li>
+                        <li><a href="#hierarchy" class="toc-link">Building a Hierarchy</a></li>
+                        <li><a href="#lifecycle" class="toc-link">The Actor Lifecycle</a></li>
+                        <li><a href="#ctor-vs-beginplay" class="toc-link">Constructor vs BeginPlay</a></li>
+                        <li><a href="#full-example" class="toc-link">A Complete Actor</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="subobjects" class="lesson-section">
+                <h2>Components &amp; the Root</h2>
+                <p>You met <code>CreateDefaultSubobject</code> in Module 1. Here's the rule stated fully: <strong>in an actor's constructor, you create its default components with <code>CreateDefaultSubobject&lt;T&gt;</code>, and exactly one of them becomes the <code>RootComponent</code></strong> — the component that defines the actor's transform in the world.</p>
+
+                <pre><code class="language-cpp">// In the constructor:
+USceneComponent* Root = CreateDefaultSubobject&lt;USceneComponent&gt;(TEXT("Root"));
+RootComponent = Root;   // this actor's transform IS the root's transform
+
+UStaticMeshComponent* Body = CreateDefaultSubobject&lt;UStaticMeshComponent&gt;(TEXT("Body"));
+Body->SetupAttachment(RootComponent);   // attach Body under the root</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 The name string matters</h4>
+                    <p>The <code>TEXT("...")</code> name you pass to <code>CreateDefaultSubobject</code> is the component's internal name — it must be <strong>unique within the actor</strong> and stable, because serialization uses it to match saved data to components. Don't rename these casually on an existing class; it can break instances that referenced the old name.</p>
+                </div>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Root choices have consequences</h4>
+                    <p>An actor with no root component has no transform of its own. Often the root is a plain <code>USceneComponent</code> (an invisible transform anchor) with visible components attached beneath it — this gives you a stable pivot independent of any one mesh. For a simple prop, the mesh itself can be the root.</p>
+                </div>
+            </section>
+
+            <section id="hierarchy" class="lesson-section">
+                <h2>Building a Hierarchy</h2>
+                <p>Components attach into a tree. Moving a parent moves its children; the root moves everything. <code>SetupAttachment</code> (in the constructor) builds this tree.</p>
+
+                <div class="mermaid">
+                    graph TD
+                        Root["Root (USceneComponent)"] --> Mesh["Body (StaticMesh)"]
+                        Root --> Spring["SpringArm"]
+                        Spring --> Cam["Camera"]
+                        Mesh --> Muzzle["MuzzleFlash (SceneComponent)"]
+                </div>
+                <figure>
+                    <figcaption>Figure 1: A typical component hierarchy. The camera follows the spring arm, which follows the root; the muzzle point rides on the body mesh. Transform changes flow down the tree.</figcaption>
+                </figure>
+
+                <pre><code class="language-cpp">// Attach relationships form the tree above:
+RootComponent = CreateDefaultSubobject&lt;USceneComponent&gt;(TEXT("Root"));
+
+Body = CreateDefaultSubobject&lt;UStaticMeshComponent&gt;(TEXT("Body"));
+Body->SetupAttachment(RootComponent);
+
+SpringArm = CreateDefaultSubobject&lt;USpringArmComponent&gt;(TEXT("SpringArm"));
+SpringArm->SetupAttachment(RootComponent);
+
+Camera = CreateDefaultSubobject&lt;UCameraComponent&gt;(TEXT("Camera"));
+Camera->SetupAttachment(SpringArm);   // camera rides the spring arm</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ SetupAttachment vs AttachToComponent</h4>
+                    <p>Use <code>SetupAttachment</code> <strong>in the constructor</strong> for default components. Use <code>AttachToComponent</code> <strong>at runtime</strong> (in <code>BeginPlay</code> or later) when attaching dynamically-spawned components or actors. Mixing them up — calling <code>SetupAttachment</code> at runtime — silently fails to attach.</p>
+                </div>
+            </section>
+
+            <section id="lifecycle" class="lesson-section">
+                <h2>The Actor Lifecycle</h2>
+                <p>An actor passes through a defined sequence. Each stage has an intended purpose, and putting code in the wrong stage is a top source of bugs.</p>
+
+                <div class="mermaid">
+                    graph TD
+                        A["Constructor<br/>create components, set defaults"] --> B["OnConstruction<br/>(construction script, editor)"]
+                        B --> C["BeginPlay<br/>gameplay starts — world is ready"]
+                        C --> D["Tick(DeltaTime)<br/>every frame while alive"]
+                        D --> E["EndPlay<br/>leaving play / being destroyed"]
+                        E --> F["Destroyed / GC"]
+                </div>
+                <figure>
+                    <figcaption>Figure 2: The actor lifecycle. The constructor runs very early (even in the editor, on the class default object); BeginPlay runs when the actor truly enters a live game.</figcaption>
+                </figure>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Stage</th><th>Runs when</th><th>Put here</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>Constructor</td><td>Object created (incl. editor/CDO)</td><td>Create components, set default values</td></tr>
+                            <tr><td><code>BeginPlay</code></td><td>Play starts / actor spawned into live world</td><td>Gameplay init that needs the world, other actors, or systems</td></tr>
+                            <tr><td><code>Tick</code></td><td>Every frame while alive (if enabled)</td><td>Per-frame logic — used sparingly</td></tr>
+                            <tr><td><code>EndPlay</code></td><td>Removed from play / destroyed</td><td>Cleanup, unbind delegates, stop timers</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section id="ctor-vs-beginplay" class="lesson-section">
+                <h2>Constructor vs BeginPlay</h2>
+                <p>This is the distinction that separates working actors from mysteriously broken ones. The constructor runs in contexts where <strong>the game world does not exist yet</strong> — including on the Class Default Object the engine creates just to know your class's defaults, and every time you open the editor.</p>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Never do gameplay in the constructor</h4>
+                    <p>In the constructor you must NOT: look for other actors, spawn things, access the world (<code>GetWorld()</code> may be null), play sounds, or start timers. None of that exists yet. Doing so crashes or behaves erratically in the editor. The constructor is <strong>only</strong> for creating components and setting default property values.</p>
+                </div>
+
+                <pre><code class="language-cpp">AItemChest::AItemChest()
+{
+    PrimaryActorTick.bCanEverTick = false;   // this chest doesn't need Tick
+
+    // ✅ OK in constructor: create components, set defaults.
+    Mesh = CreateDefaultSubobject&lt;UStaticMeshComponent&gt;(TEXT("Mesh"));
+    RootComponent = Mesh;
+    GoldAmount = 100;
+
+    // ❌ WRONG in constructor — the world isn't ready:
+    // TArray&lt;AActor*&gt; Found;
+    // UGameplayStatics::GetAllActorsOfClass(GetWorld(), ..., Found); // crash risk
+}
+
+void AItemChest::BeginPlay()
+{
+    Super::BeginPlay();
+
+    // ✅ Now the world exists — safe to interact with it.
+    UE_LOG(LogTemp, Log, TEXT("Chest ready with %d gold"), GoldAmount);
+    // find other actors, register with a subsystem, start a timer, etc.
+}</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 The rule in one line</h4>
+                    <p><strong>Constructor = "what am I made of?" · BeginPlay = "the game has started, go."</strong> If code needs the world or other actors, it belongs in <code>BeginPlay</code>, not the constructor.</p>
+                </div>
+            </section>
+
+            <section id="full-example" class="lesson-section">
+                <h2>A Complete Actor</h2>
+                <p>Putting it together — a pickup actor that bobs, exposes tunables, and logs when the game starts. Header:</p>
+
+                <pre><code class="language-cpp">// FloatingPickup.h
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GameFramework/Actor.h"
+#include "FloatingPickup.generated.h"
+
+class UStaticMeshComponent;
+
+UCLASS()
+class MYPROJECT_API AFloatingPickup : public AActor
+{
+    GENERATED_BODY()
+
+public:
+    AFloatingPickup();
+
+protected:
+    virtual void BeginPlay() override;
+
+public:
+    virtual void Tick(float DeltaTime) override;
+
+    UPROPERTY(VisibleAnywhere, Category = "Pickup")
+    TObjectPtr&lt;UStaticMeshComponent&gt; Mesh;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pickup")
+    float BobHeight = 20.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pickup")
+    float BobSpeed = 2.0f;
+
+private:
+    float RunningTime = 0.0f;
+    FVector StartLocation;
+};</code></pre>
+
+                <p>Source:</p>
+
+                <pre><code class="language-cpp">// FloatingPickup.cpp
+#include "FloatingPickup.h"
+#include "Components/StaticMeshComponent.h"
+
+AFloatingPickup::AFloatingPickup()
+{
+    PrimaryActorTick.bCanEverTick = true;
+
+    Mesh = CreateDefaultSubobject&lt;UStaticMeshComponent&gt;(TEXT("Mesh"));
+    RootComponent = Mesh;
+}
+
+void AFloatingPickup::BeginPlay()
+{
+    Super::BeginPlay();
+
+    // World exists now — safe to read our placed transform.
+    StartLocation = GetActorLocation();
+    UE_LOG(LogTemp, Log, TEXT("%s spawned, bobbing enabled"), *GetName());
+}
+
+void AFloatingPickup::Tick(float DeltaTime)
+{
+    Super::Tick(DeltaTime);
+
+    RunningTime += DeltaTime;
+    // Oscillate around the starting height using a sine wave.
+    const float NewZ = StartLocation.Z + FMath::Sin(RunningTime * BobSpeed) * BobHeight;
+    SetActorLocation(FVector(StartLocation.X, StartLocation.Y, NewZ));
+}</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ Notice the discipline</h4>
+                    <p>Components created in the constructor; <code>StartLocation</code> captured in <code>BeginPlay</code> (because the placed transform is only meaningful once in the world); per-frame motion in <code>Tick</code>, frame-rate independent via <code>DeltaTime</code>. This shape — construct, begin, tick — recurs in almost every actor you'll write.</p>
+                </div>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: Build a rotating beacon</h3>
+                    <p><strong>Objective:</strong> Apply the construct/begin/tick pattern.</p>
+                    <p>Create <code>ABeacon : public AActor</code> with: a scene-component root, a static mesh attached under it, a point-light component attached under the root, an <code>EditAnywhere</code> <code>RotationSpeed</code>, and a <code>BeginPlay</code> log. In <code>Tick</code>, rotate the mesh (not the whole actor) around Z. Decide what goes in the constructor vs <code>BeginPlay</code>.</p>
+
+                    <details>
+                        <summary>💡 Hint</summary>
+                        <p>Constructor: create root + mesh + light, attach them, set <code>bCanEverTick = true</code>. BeginPlay: just the log (and anything needing the world). Tick: <code>Mesh->AddLocalRotation(FRotator(0, RotationSpeed * DeltaTime, 0))</code>.</p>
+                    </details>
+
+                    <details>
+                        <summary>✅ Constructor skeleton</summary>
+                        <pre><code class="language-cpp">ABeacon::ABeacon()
+{
+    PrimaryActorTick.bCanEverTick = true;
+
+    RootComponent = CreateDefaultSubobject&lt;USceneComponent&gt;(TEXT("Root"));
+
+    Mesh = CreateDefaultSubobject&lt;UStaticMeshComponent&gt;(TEXT("Mesh"));
+    Mesh->SetupAttachment(RootComponent);
+
+    Light = CreateDefaultSubobject&lt;UPointLightComponent&gt;(TEXT("Light"));
+    Light->SetupAttachment(RootComponent);
+}</code></pre>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> Where do you create an actor's default components?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — default subobjects are created in the constructor.">A) In the constructor, with <code>CreateDefaultSubobject</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="Too late for default components.">B) In <code>Tick</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="BeginPlay is for runtime-spawned things, not defaults.">C) In <code>BeginPlay</code> with <code>new</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> Why must you NOT call <code>GetWorld()</code>-dependent code in the constructor?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — the constructor runs before the world exists (incl. on the CDO/in editor).">A) The world may not exist yet; the constructor runs very early</button>
+                            <button class="quiz-option" data-correct="false" data-hint="It's not a compile issue.">B) It won't compile</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Performance isn't the reason.">C) It's too slow</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> Which attaches a default component in the constructor?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — SetupAttachment is the constructor-time attachment call.">A) <code>SetupAttachment</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="That's the runtime call.">B) <code>AttachToComponent</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="No such default call.">C) <code>ConnectTo</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li>Create default components in the constructor with <code>CreateDefaultSubobject&lt;T&gt;</code>; assign one as <code>RootComponent</code>.</li>
+                        <li>Build the component tree with <code>SetupAttachment</code> (constructor); use <code>AttachToComponent</code> for runtime attachment.</li>
+                        <li>The lifecycle is <strong>constructor → BeginPlay → Tick → EndPlay</strong>; each stage has a purpose.</li>
+                        <li><strong>Constructor = "what am I made of"</strong> (components + defaults only); <strong>BeginPlay = "the game started"</strong> (world/actors are ready).</li>
+                        <li>Capture world-dependent state (like placed location) in <code>BeginPlay</code>, and keep per-frame work in <code>Tick</code> frame-rate independent.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-engine-actors" target="_blank" rel="noopener">Actors (Epic)</a></li>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-engine-actor-lifecycle" target="_blank" rel="noopener">Actor Lifecycle (Epic)</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p>You've been attaching engine components. Next you'll write your <em>own</em> — custom Actor and Scene Components that package reusable behavior you can drop onto any actor, the composition pattern that keeps Unreal codebases clean.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Lesson complete!</h3>
+                    <p>You can build actors from parts. Now let's craft the parts themselves.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m03_l01_gameplay_framework_map.html" class="prev-lesson">← Previous: The Gameplay Framework Map</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m03_l03_custom_components.html" class="next-lesson">Next: Custom Actor &amp; Scene Components →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

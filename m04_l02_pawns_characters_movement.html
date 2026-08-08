@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Pawns, Characters, and the Character Movement Component in Unreal Engine 5.8 C++: building a controllable character, camera setup, and movement tuning.">
+    <meta name="author" content="Ray de la Paz">
+    <title>Pawns, Characters &amp; Movement — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 4</a></li>
+            <li aria-current="page">Lesson 4.2: Pawns, Characters &amp; Movement</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>🏃 Lesson 4.2: Pawns, Characters &amp; Movement</h1>
+                <p class="lead">Last lesson, input reached your functions. Now we build the body those functions drive — a full third-person Character in C++, complete with a camera, and tuned via the Character Movement Component that gives you walking, jumping, and falling for free.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Assemble a third-person Character with a spring arm and camera in C++</li>
+                        <li>Wire movement input to <code>AddMovementInput</code> and jumping to <code>Jump()</code></li>
+                        <li>Tune the Character Movement Component (speed, jump, rotation)</li>
+                        <li>Explain "orient rotation to movement" vs "use controller yaw"</li>
+                        <li>Decide when a bare Pawn beats a Character</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 60 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#anatomy" class="toc-link">Anatomy of a Character</a></li>
+                        <li><a href="#build" class="toc-link">Building the Character</a></li>
+                        <li><a href="#move" class="toc-link">Movement &amp; Jump</a></li>
+                        <li><a href="#tuning" class="toc-link">Tuning the Movement Component</a></li>
+                        <li><a href="#pawn-vs" class="toc-link">When to Use a Bare Pawn</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="anatomy" class="lesson-section">
+                <h2>Anatomy of a Character</h2>
+                <p>Recall from Lesson 3.1: <code>ACharacter</code> arrives with a capsule (collision), a skeletal mesh, and a Character Movement Component. For a third-person game you add a <strong>spring arm</strong> (a camera boom that pulls in near walls) and a <strong>camera</strong> on its end.</p>
+
+                <div class="mermaid">
+                    graph TD
+                        Cap["CapsuleComponent (root, inherited)"] --> Mesh["SkeletalMesh (inherited)"]
+                        Cap --> Arm["SpringArm (you add)"]
+                        Arm --> Cam["Camera (you add)"]
+                        Cap --> Move["CharacterMovementComponent (inherited)"]
+                </div>
+                <figure>
+                    <figcaption>Figure 1: A third-person Character. The capsule is the root; the spring arm and camera are what you add in C++. The movement component isn't in the transform hierarchy — it's a logic component driving the capsule.</figcaption>
+                </figure>
+            </section>
+
+            <section id="build" class="lesson-section">
+                <h2>Building the Character</h2>
+                <p>Create via <strong>New C++ Class → Character</strong>. Add the camera boom and camera in the constructor. Header (abbreviated to the new parts; input properties from Lesson 4.1 still apply):</p>
+
+                <pre><code class="language-cpp">// MyCharacter.h
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GameFramework/Character.h"
+#include "MyCharacter.generated.h"
+
+class USpringArmComponent;
+class UCameraComponent;
+class UInputAction;
+class UInputMappingContext;
+struct FInputActionValue;
+
+UCLASS()
+class MYPROJECT_API AMyCharacter : public ACharacter
+{
+    GENERATED_BODY()
+
+public:
+    AMyCharacter();
+
+protected:
+    virtual void BeginPlay() override;
+    virtual void SetupPlayerInputComponent(UInputComponent* InputComponent) override;
+
+    UPROPERTY(VisibleAnywhere, Category = "Camera")
+    TObjectPtr&lt;USpringArmComponent&gt; SpringArm;
+
+    UPROPERTY(VisibleAnywhere, Category = "Camera")
+    TObjectPtr&lt;UCameraComponent&gt; Camera;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+    TObjectPtr&lt;UInputMappingContext&gt; DefaultMappingContext;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+    TObjectPtr&lt;UInputAction&gt; MoveAction;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+    TObjectPtr&lt;UInputAction&gt; LookAction;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+    TObjectPtr&lt;UInputAction&gt; JumpAction;
+
+    void Move(const FInputActionValue&amp; Value);
+    void Look(const FInputActionValue&amp; Value);
+};</code></pre>
+
+                <pre><code class="language-cpp">// MyCharacter.cpp (constructor)
+#include "MyCharacter.h"
+#include "GameFramework/SpringArmComponent.h"
+#include "Camera/CameraComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
+
+AMyCharacter::AMyCharacter()
+{
+    PrimaryActorTick.bCanEverTick = false;   // movement comp handles per-frame work
+
+    // Spring arm: a boom attached to the capsule root.
+    SpringArm = CreateDefaultSubobject&lt;USpringArmComponent&gt;(TEXT("SpringArm"));
+    SpringArm->SetupAttachment(RootComponent);
+    SpringArm->TargetArmLength = 400.0f;
+    SpringArm->bUsePawnControlRotation = true;   // arm rotates with the controller
+
+    // Camera on the end of the arm.
+    Camera = CreateDefaultSubobject&lt;UCameraComponent&gt;(TEXT("Camera"));
+    Camera->SetupAttachment(SpringArm);
+    Camera->bUsePawnControlRotation = false;     // camera follows the arm, not input directly
+
+    // Movement feel: the body turns toward its movement direction, not the camera.
+    bUseControllerRotationYaw = false;
+    GetCharacterMovement()->bOrientRotationToMovement = true;
+    GetCharacterMovement()->RotationRate = FRotator(0.0f, 540.0f, 0.0f);
+    GetCharacterMovement()->JumpZVelocity = 500.0f;
+    GetCharacterMovement()->MaxWalkSpeed = 500.0f;
+}</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 <code>bUsePawnControlRotation</code></h4>
+                    <p>On the spring arm, <code>bUsePawnControlRotation = true</code> means "rotate this boom with the player's look input." On the camera it's <code>false</code> because the camera just rides the arm. This split — arm follows input, camera follows arm — is the standard third-person rig.</p>
+                </div>
+            </section>
+
+            <section id="move" class="lesson-section">
+                <h2>Movement &amp; Jump</h2>
+                <p>Bind input as in Lesson 4.1, then implement the handlers. The movement handler is where the camera-relative feel comes together:</p>
+
+                <pre><code class="language-cpp">#include "EnhancedInputComponent.h"
+#include "InputActionValue.h"
+
+void AMyCharacter::SetupPlayerInputComponent(UInputComponent* InputComponent)
+{
+    Super::SetupPlayerInputComponent(InputComponent);
+
+    if (UEnhancedInputComponent* EIC = Cast&lt;UEnhancedInputComponent&gt;(InputComponent))
+    {
+        EIC->BindAction(MoveAction, ETriggerEvent::Triggered, this, &amp;AMyCharacter::Move);
+        EIC->BindAction(LookAction, ETriggerEvent::Triggered, this, &amp;AMyCharacter::Look);
+        // ACharacter provides Jump()/StopJumping() out of the box:
+        EIC->BindAction(JumpAction, ETriggerEvent::Started,   this, &amp;ACharacter::Jump);
+        EIC->BindAction(JumpAction, ETriggerEvent::Completed, this, &amp;ACharacter::StopJumping);
+    }
+}
+
+void AMyCharacter::Move(const FInputActionValue&amp; Value)
+{
+    const FVector2D Axis = Value.Get&lt;FVector2D&gt;();
+    if (!Controller) { return; }
+
+    // Move relative to where the CONTROLLER faces (camera-relative), ignoring pitch.
+    const FRotator YawRotation(0.0f, Controller->GetControlRotation().Yaw, 0.0f);
+    const FVector Forward = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
+    const FVector Right   = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
+
+    AddMovementInput(Forward, Axis.Y);
+    AddMovementInput(Right,   Axis.X);
+}
+
+void AMyCharacter::Look(const FInputActionValue&amp; Value)
+{
+    const FVector2D Axis = Value.Get&lt;FVector2D&gt;();
+    AddControllerYawInput(Axis.X);
+    AddControllerPitchInput(Axis.Y);
+}</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ Why compute forward from the controller yaw?</h4>
+                    <p>Using the <em>controller's</em> yaw (not the actor's) makes "push up = move away from camera," which is what players expect in third person. We zero the pitch so looking up/down doesn't make the character try to fly. <code>AddMovementInput</code> hands the vector to the movement component, which does the actual physics.</p>
+                </div>
+            </section>
+
+            <section id="tuning" class="lesson-section">
+                <h2>Tuning the Movement Component</h2>
+                <p><code>UCharacterMovementComponent</code> is a deep, battle-tested system (it's even network-predicted — Module 10). You mostly tune it via properties. The essentials:</p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Property</th><th>Controls</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>MaxWalkSpeed</code></td><td>Top walking speed (cm/s)</td></tr>
+                            <tr><td><code>JumpZVelocity</code></td><td>Upward launch speed of a jump</td></tr>
+                            <tr><td><code>AirControl</code></td><td>How much you can steer mid-air (0–1)</td></tr>
+                            <tr><td><code>GravityScale</code></td><td>Multiplier on gravity (floaty vs heavy)</td></tr>
+                            <tr><td><code>bOrientRotationToMovement</code></td><td>Body turns to face movement direction</td></tr>
+                            <tr><td><code>RotationRate</code></td><td>How fast the body turns</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <pre><code class="language-cpp">// Access it anywhere via GetCharacterMovement():
+UCharacterMovementComponent* Move = GetCharacterMovement();
+Move->MaxWalkSpeed = 600.0f;    // e.g. when sprinting
+Move->AirControl   = 0.2f;</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Don't reinvent movement</h4>
+                    <p>It's tempting to move a character by directly setting its location in <code>Tick</code>. Resist — you'd lose collision response, step handling, slopes, jumping, and network prediction. Feed intent through <code>AddMovementInput</code> and let the movement component do the work. Custom movement is an advanced topic; the component covers the vast majority of games.</p>
+                </div>
+            </section>
+
+            <section id="pawn-vs" class="lesson-section">
+                <h2>When to Use a Bare Pawn</h2>
+                <p><code>ACharacter</code> is purpose-built for humanoid walking. When your controllable thing <em>doesn't</em> walk like a person, a bare <code>APawn</code> is the better base:</p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Use <code>ACharacter</code></th><th>Use <code>APawn</code></th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>Player/NPC on foot</td><td>Vehicles, aircraft, boats</td></tr>
+                            <tr><td>Walk, jump, crouch, swim</td><td>Flying/hovering, 6-DOF space movement</td></tr>
+                            <tr><td>Capsule + skeletal mesh humanoid</td><td>A camera-only spectator, a security camera, a cursor</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <blockquote>
+                    <strong>💡 The trade:</strong> <code>ACharacter</code> gives you a lot for free but assumes humanoid locomotion. A bare <code>APawn</code> gives you a blank body — you add a mesh, a collision component, and your own movement (or a <code>UFloatingPawnMovement</code> / <code>UPawnMovementComponent</code>). Pick the one whose assumptions match your creature.</blockquote>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: Add a sprint</h3>
+                    <p><strong>Objective:</strong> Use input + the movement component together.</p>
+                    <ol>
+                        <li>Add a <code>SprintAction</code> (Digital).</li>
+                        <li>Bind <code>Started</code> → <code>StartSprint</code> and <code>Completed</code> → <code>StopSprint</code>.</li>
+                        <li>In those, set <code>GetCharacterMovement()->MaxWalkSpeed</code> to 900 (sprint) / 500 (walk).</li>
+                        <li>Why is toggling a movement-component property cleaner than special-casing speed in <code>Move</code>?</li>
+                    </ol>
+
+                    <details>
+                        <summary>✅ Handlers &amp; reasoning</summary>
+                        <pre><code class="language-cpp">void AMyCharacter::StartSprint(const FInputActionValue&amp;)
+{
+    GetCharacterMovement()->MaxWalkSpeed = 900.0f;
+}
+void AMyCharacter::StopSprint(const FInputActionValue&amp;)
+{
+    GetCharacterMovement()->MaxWalkSpeed = 500.0f;
+}</code></pre>
+                        <p>Because the movement component already applies <code>MaxWalkSpeed</code> to acceleration, friction, and network prediction. Changing one property lets all that machinery keep working; hand-scaling the input vector would fight it.</p>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> Which component makes <code>ACharacter</code> walk, jump, and fall?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="That's collision.">A) Capsule Component</button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — the Character Movement Component handles locomotion.">B) Character Movement Component</button>
+                            <button class="quiz-option" data-correct="false" data-hint="That's the camera boom.">C) Spring Arm</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> How should you apply movement intent to a Character?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — AddMovementInput feeds the movement component, preserving collision/prediction.">A) <code>AddMovementInput(Direction, Scale)</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="That bypasses collision, slopes, and prediction.">B) <code>SetActorLocation</code> in Tick</button>
+                            <button class="quiz-option" data-correct="false" data-hint="No such standard call for locomotion.">C) <code>Teleport</code> each frame</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> You're building a controllable hovercraft. Best base class?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="Character assumes humanoid walking.">A) <code>ACharacter</code></button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — non-humanoid movement fits a bare Pawn with custom/floating movement.">B) <code>APawn</code> with floating/custom movement</button>
+                            <button class="quiz-option" data-correct="false" data-hint="That's the brain, not the body.">C) <code>APlayerController</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li><code>ACharacter</code> ships with capsule + skeletal mesh + movement; add a <strong>spring arm and camera</strong> in C++ for third person.</li>
+                        <li>Set <code>SpringArm->bUsePawnControlRotation = true</code> (arm follows input) and the camera <code>false</code> (rides the arm).</li>
+                        <li>Feed movement through <strong><code>AddMovementInput</code></strong> using the controller's yaw for camera-relative control; use <code>ACharacter::Jump</code> for jumping.</li>
+                        <li>Tune feel via the <strong>Character Movement Component</strong> (<code>MaxWalkSpeed</code>, <code>JumpZVelocity</code>, <code>bOrientRotationToMovement</code>) — never move by setting location in Tick.</li>
+                        <li>Use a <strong>bare Pawn</strong> when movement isn't humanoid walking (vehicles, flying, spectator).</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/character-movement-component-in-unreal-engine" target="_blank" rel="noopener">Character Movement Component (Epic)</a></li>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/setting-up-a-character-in-unreal-engine" target="_blank" rel="noopener">Setting Up a Character (Epic)</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p>Your character moves. But who owns the input, the camera target, and the per-player data — and how does a brain attach to a body? The final Module 4 lesson covers the <strong>PlayerController and possession</strong>, tying the framework together.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Lesson complete!</h3>
+                    <p>You have a moving character. Let's understand who's really driving.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m04_l01_enhanced_input_in_cpp.html" class="prev-lesson">← Previous: Enhanced Input in C++</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m04_l03_playercontroller_possession.html" class="next-lesson">Next: PlayerController &amp; Possession →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

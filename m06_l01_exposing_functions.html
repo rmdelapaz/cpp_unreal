@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Exposing C++ functions to Blueprint in Unreal Engine 5.8: BlueprintCallable, BlueprintPure, BlueprintImplementableEvent, and BlueprintNativeEvent — and which direction each one flows.">
+    <meta name="author" content="Ray de la Paz">
+    <title>Exposing Functions to Blueprint — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 6</a></li>
+            <li aria-current="page">Lesson 6.1: Exposing Functions to Blueprint</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>🔗 Lesson 6.1: Exposing Functions to Blueprint</h1>
+                <p class="lead">This is the module the whole course has pointed toward. C++ and Blueprint aren't rivals — they're layers, and functions are how they call across the boundary. The trick is knowing which of four specifiers to use, because each sends the call in a specific <em>direction</em>.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Explain the two directions a call can cross the C++/Blueprint boundary</li>
+                        <li>Use <code>BlueprintCallable</code> and <code>BlueprintPure</code> to call C++ <em>from</em> Blueprint</li>
+                        <li>Use <code>BlueprintImplementableEvent</code> to call Blueprint <em>from</em> C++</li>
+                        <li>Use <code>BlueprintNativeEvent</code> for a C++ default that Blueprint can override</li>
+                        <li>Choose the right specifier for a given interop need</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 60 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#directions" class="toc-link">Two Directions</a></li>
+                        <li><a href="#callable" class="toc-link">BlueprintCallable &amp; Pure</a></li>
+                        <li><a href="#implementable" class="toc-link">BlueprintImplementableEvent</a></li>
+                        <li><a href="#native" class="toc-link">BlueprintNativeEvent</a></li>
+                        <li><a href="#choosing" class="toc-link">Choosing a Specifier</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="directions" class="lesson-section">
+                <h2>Two Directions</h2>
+                <p>Every interop function crosses the boundary in one of two directions. Getting the direction straight in your head makes the four specifiers obvious.</p>
+
+                <div class="mermaid">
+                    graph LR
+                        subgraph BPtoCPP["Blueprint calls C++"]
+                        BP1["Blueprint graph"] -->|"BlueprintCallable / BlueprintPure"| CPP1["C++ function runs"]
+                        end
+                        subgraph CPPtoBP["C++ calls Blueprint"]
+                        CPP2["C++ code"] -->|"BlueprintImplementableEvent / NativeEvent"| BP2["Blueprint graph runs"]
+                        end
+                </div>
+                <figure>
+                    <figcaption>Figure 1: Two directions, four specifiers. The left pair lets designers call your mechanics; the right pair lets your mechanics invoke designer-authored behavior.</figcaption>
+                </figure>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Direction</th><th>Specifier</th><th>Meaning</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>BP → C++</td><td><code>BlueprintCallable</code></td><td>Blueprint calls your C++ (has side effects)</td></tr>
+                            <tr><td>BP → C++</td><td><code>BlueprintPure</code></td><td>Blueprint calls your C++ getter (no side effects)</td></tr>
+                            <tr><td>C++ → BP</td><td><code>BlueprintImplementableEvent</code></td><td>C++ calls Blueprint; body defined only in BP</td></tr>
+                            <tr><td>C++ → BP</td><td><code>BlueprintNativeEvent</code></td><td>C++ calls; C++ has a default, BP can override</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section id="callable" class="lesson-section">
+                <h2>BlueprintCallable &amp; Pure</h2>
+                <p>You met these in Lesson 2.3. Now the full picture: they expose a C++ function as a <em>node</em> a designer drops into a Blueprint graph. This is how your mechanics become designer-usable.</p>
+
+                <pre><code class="language-cpp">// BlueprintCallable: an ACTION node with an execution pin. Has side effects.
+UFUNCTION(BlueprintCallable, Category = "Combat")
+void Fire();
+
+// BlueprintPure: a data node, NO exec pin — used like a getter.
+UFUNCTION(BlueprintPure, Category = "Combat")
+int32 GetAmmo() const;
+
+// Parameters and return values cross the boundary too:
+UFUNCTION(BlueprintCallable, Category = "Combat")
+bool TryReload(int32 AmountToLoad);</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 What "crosses" the boundary</h4>
+                    <p>Function parameters and return values must be <strong>reflection-friendly</strong> types — the same rule as <code>UPROPERTY</code>: primitives, <code>FString</code>/<code>FName</code>/<code>FText</code>, <code>UObject*</code>, and <code>USTRUCT</code>/<code>UENUM</code> marked <code>BlueprintType</code> (Lesson 6.3). You can't pass a raw <code>std::vector</code> or an un-reflected struct across — Blueprint wouldn't know how to draw the pin.</p>
+                </div>
+
+                <div class="card card-warning">
+                    <h4>⚠️ BlueprintPure, revisited</h4>
+                    <p>A pure node may be evaluated multiple times or in an unpredictable order by Blueprint. Only mark truly side-effect-free getters pure (as in Lesson 2.3). Marking <code>Fire()</code> pure would be a disaster — the "getter" would fire your weapon whenever Blueprint felt like re-evaluating it.</p>
+                </div>
+            </section>
+
+            <section id="implementable" class="lesson-section">
+                <h2>BlueprintImplementableEvent</h2>
+                <p>Now the reverse direction. <code>BlueprintImplementableEvent</code> declares a function in C++ that has <strong>no C++ body at all</strong> — you <em>call</em> it from C++, and a designer <em>implements</em> it in the Blueprint graph. It's how your mechanics hand off cosmetic or design decisions.</p>
+
+                <pre><code class="language-cpp">// Weapon.h — declared, but NOT defined in C++. Designers implement it in BP.
+UFUNCTION(BlueprintImplementableEvent, Category = "Combat")
+void OnFired();   // e.g. play muzzle flash, sound, camera shake
+
+// Weapon.cpp — you CALL it from your mechanics; the BP graph runs.
+void AWeapon::Fire()
+{
+    // ... C++ firing mechanics: spawn projectile, decrement ammo ...
+    OnFired();   // triggers whatever the designer wired in Blueprint
+}</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ The clean division of labor</h4>
+                    <p><code>Fire()</code> (C++) owns the <em>mechanics</em>: projectile, ammo, damage. <code>OnFired()</code> (Blueprint) owns the <em>presentation</em>: muzzle flash, sound, screen shake — the things designers tune constantly and want to iterate on without a compile. This is the hybrid model (Lesson 1.1) at the function level: C++ decides <em>that</em> it fired; Blueprint decides <em>what that looks like</em>.</p>
+                </div>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Don't provide a C++ body for it</h4>
+                    <p><code>BlueprintImplementableEvent</code> functions must <em>not</em> have a C++ implementation — UHT generates the calling glue, and defining a body causes a linker error. If a Blueprint doesn't implement it, calling it simply does nothing (safe no-op). If you need a C++ default, that's the <em>next</em> specifier.</p>
+                </div>
+            </section>
+
+            <section id="native" class="lesson-section">
+                <h2>BlueprintNativeEvent</h2>
+                <p><code>BlueprintNativeEvent</code> is the best of both: C++ provides a <strong>default implementation</strong>, and Blueprint <em>may</em> override it. You saw this on interfaces (Lesson 5.5); here it is on a regular class. The C++ body lives in a function with an <code>_Implementation</code> suffix.</p>
+
+                <pre><code class="language-cpp">// Enemy.h — has a C++ default, overridable in Blueprint.
+UFUNCTION(BlueprintNativeEvent, Category = "AI")
+void ReactToPlayer(AActor* Player);</code></pre>
+
+                <pre><code class="language-cpp">// Enemy.cpp — the C++ default goes in ReactToPlayer_Implementation:
+void AEnemy::ReactToPlayer_Implementation(AActor* Player)
+{
+    // Default behavior in C++: turn toward the player.
+    if (IsValid(Player))
+    {
+        const FVector Dir = Player->GetActorLocation() - GetActorLocation();
+        SetActorRotation(Dir.Rotation());
+    }
+}
+
+// To CALL it (so a Blueprint override is respected), use Execute_ :
+void AEnemy::Tick(float DeltaTime)
+{
+    Super::Tick(DeltaTime);
+    if (SeesPlayer())
+    {
+        // Runs the BP override if present, else the C++ _Implementation.
+        Execute_ReactToPlayer(this, DetectedPlayer);
+    }
+}</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 The two suffixes, one more time</h4>
+                    <ul>
+                        <li><strong>Define</strong> the C++ default in <code>Fn_Implementation</code>.</li>
+                        <li><strong>Call</strong> it via <code>Execute_Fn(Object, Args)</code> so a Blueprint override wins when present — exactly the convention from Lesson 5.5. Calling <code>ReactToPlayer()</code> directly would bypass Blueprint overrides.</li>
+                    </ul>
+                </div>
+            </section>
+
+            <section id="choosing" class="lesson-section">
+                <h2>Choosing a Specifier</h2>
+                <p>A quick router for the four:</p>
+
+                <div class="mermaid">
+                    graph TD
+                        Start["I want to..."] --> Q1{"Which direction?"}
+                        Q1 -->|"BP should call my C++"| Q2{"Side effects?"}
+                        Q2 -->|Yes| BC["BlueprintCallable"]
+                        Q2 -->|"No, it's a getter"| BP["BlueprintPure"]
+                        Q1 -->|"My C++ should call BP"| Q3{"Need a C++ default?"}
+                        Q3 -->|"No, BP-only"| BIE["BlueprintImplementableEvent"]
+                        Q3 -->|"Yes, overridable"| BNE["BlueprintNativeEvent"]
+                </div>
+                <figure>
+                    <figcaption>Figure 2: Direction first, then details. Nearly every interop decision reduces to these two questions.</figcaption>
+                </figure>
+
+                <div class="card card-success">
+                    <h4>✅ The mental shortcut</h4>
+                    <p><strong>"Blueprint drives C++"</strong> → <code>Callable</code>/<code>Pure</code>. <strong>"C++ drives Blueprint"</strong> → <code>ImplementableEvent</code> (no default) or <code>NativeEvent</code> (with default). Keep the mechanics in C++ and the tunable/cosmetic responses in Blueprint, and these choices become second nature.</p>
+                </div>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: Design a door's interop surface</h3>
+                    <p><strong>Objective:</strong> Pick a specifier for each function on an <code>ADoor</code>.</p>
+                    <ol>
+                        <li><code>Open()</code> — designers should be able to call it from a Blueprint graph; it changes state.</li>
+                        <li><code>IsOpen()</code> — a getter Blueprint reads for logic.</li>
+                        <li><code>OnOpened()</code> — the C++ <code>Open()</code> calls this so designers can play a sound/animation; no C++ default needed.</li>
+                        <li><code>GetAutoCloseDelay()</code> — has a sensible C++ default, but a specific door Blueprint might override it.</li>
+                    </ol>
+
+                    <details>
+                        <summary>✅ Answers</summary>
+                        <ul>
+                            <li><strong>1.</strong> <code>UFUNCTION(BlueprintCallable)</code> — action with side effects.</li>
+                            <li><strong>2.</strong> <code>UFUNCTION(BlueprintPure)</code> — side-effect-free getter.</li>
+                            <li><strong>3.</strong> <code>UFUNCTION(BlueprintImplementableEvent)</code> — C++ calls it, BP implements, no default.</li>
+                            <li><strong>4.</strong> <code>UFUNCTION(BlueprintNativeEvent)</code> — C++ default in <code>_Implementation</code>, override-able, called via <code>Execute_</code>.</li>
+                        </ul>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> Which lets your C++ call a designer-authored Blueprint graph, with no C++ body?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="That's BP calling C++.">A) <code>BlueprintCallable</code></button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — BlueprintImplementableEvent is declared in C++, implemented in BP.">B) <code>BlueprintImplementableEvent</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="That's a getter.">C) <code>BlueprintPure</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> A <code>BlueprintNativeEvent</code>'s C++ default lives in a function named:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — the default goes in Fn_Implementation.">A) <code>Fn_Implementation</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="That's the call wrapper, not the body.">B) <code>Execute_Fn</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="Plain Fn is the declaration.">C) <code>Fn</code> itself</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> To respect a Blueprint override of a <code>BlueprintNativeEvent</code>, call it via:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — Execute_Fn routes to the BP override if present.">A) <code>Execute_Fn(Object, Args)</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="That bypasses the BP override.">B) <code>Object->Fn(Args)</code> directly</button>
+                            <button class="quiz-option" data-correct="false" data-hint="No such call.">C) <code>Object->Override_Fn()</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li>Interop functions flow in <strong>two directions</strong>: BP→C++ and C++→BP. Identify the direction first.</li>
+                        <li><strong>BP → C++:</strong> <code>BlueprintCallable</code> (action, side effects) and <code>BlueprintPure</code> (side-effect-free getter).</li>
+                        <li><strong>C++ → BP:</strong> <code>BlueprintImplementableEvent</code> (no C++ body — BP implements) and <code>BlueprintNativeEvent</code> (C++ default in <code>_Implementation</code>, overridable).</li>
+                        <li>Call <code>BlueprintNativeEvent</code>/interface functions via <code>Execute_Fn</code> so Blueprint overrides win.</li>
+                        <li>Keep <strong>mechanics in C++</strong> and <strong>cosmetic/tunable responses in Blueprint</strong> — the hybrid model at the function level.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/exposing-gameplay-elements-to-blueprints-visual-scripting-in-unreal-engine" target="_blank" rel="noopener">Exposing Gameplay Elements to Blueprint (Epic)</a></li>
+                    <li><a href="https://benui.ca/unreal/ufunction/" target="_blank" rel="noopener">BenUI — UFUNCTION specifier reference</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p>Functions cross the boundary; next, <strong>properties</strong>. We'll go deeper on exposing member variables to Blueprint — read/write control, expose-on-spawn, and the editor polish that makes your C++ classes a joy for designers to configure.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Lesson complete!</h3>
+                    <p>The boundary is open both ways. Now let's expose the data.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m05_l05_interfaces.html" class="prev-lesson">← Previous: Interfaces (UINTERFACE)</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m06_l02_exposing_properties.html" class="next-lesson">Next: Exposing Properties to Blueprint →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

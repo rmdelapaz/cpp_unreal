@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Writing custom Actor Components and Scene Components in Unreal Engine 5.8 C++: composition over inheritance, reusable behavior, and when to use each base.">
+    <meta name="author" content="Ray de la Paz">
+    <title>Custom Actor &amp; Scene Components — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 3</a></li>
+            <li aria-current="page">Lesson 3.3: Custom Actor &amp; Scene Components</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>🧩 Lesson 3.3: Custom Actor &amp; Scene Components</h1>
+                <p class="lead">Instead of cramming every feature into ever-bigger actor classes, Unreal encourages <em>composition</em>: package a behavior into a component and drop it onto any actor that needs it. Writing your own components is the single biggest lever for a clean, reusable codebase.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Explain composition over inheritance in Unreal terms</li>
+                        <li>Choose between <code>UActorComponent</code> and <code>USceneComponent</code></li>
+                        <li>Write a custom <code>UActorComponent</code> with its own state and logic</li>
+                        <li>Expose component functionality to its owning actor and to Blueprint</li>
+                        <li>Get the owning actor safely from inside a component</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 60 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#why" class="toc-link">Composition over Inheritance</a></li>
+                        <li><a href="#which" class="toc-link">ActorComponent vs SceneComponent</a></li>
+                        <li><a href="#write" class="toc-link">Writing a Health Component</a></li>
+                        <li><a href="#owner" class="toc-link">Reaching the Owner</a></li>
+                        <li><a href="#use" class="toc-link">Using the Component</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="why" class="lesson-section">
+                <h2>Composition over Inheritance</h2>
+                <p>Imagine health. If you put health logic directly in your <code>ACharacter</code>, then your destructible <code>ABarrel</code>, your <code>ATurret</code>, and your <code>ADoor</code> each need their own copy — or an awkward shared base class that forces unrelated things to be siblings. Inheritance trees get tangled fast.</p>
+
+                <p><strong>Composition</strong> flips it: write a <code>UHealthComponent</code> once, and <em>attach</em> it to any actor that should have health — character, barrel, turret, door. Each keeps its own base class; they just share a part.</p>
+
+                <div class="mermaid">
+                    graph TD
+                        HC["UHealthComponent<br/>(one implementation)"] --> Char["ACharacter"]
+                        HC --> Barrel["ABarrel"]
+                        HC --> Turret["ATurret"]
+                        HC --> Door["ADoor"]
+                </div>
+                <figure>
+                    <figcaption>Figure 1: One component, many unrelated owners. This is how you avoid deep, brittle inheritance trees — the defining pattern of clean Unreal architecture.</figcaption>
+                </figure>
+
+                <div class="card card-accent">
+                    <h4>📖 The mental shift</h4>
+                    <p>Ask not "what should this actor <em>be</em>?" (inheritance) but "what should this actor <em>have</em>?" (composition). Health, inventory, interaction, aiming — each becomes a component you mix onto whatever needs it. This mirrors how the engine itself is built: even <code>ACharacter</code> is "a Pawn that <em>has</em> a movement component."</p>
+                </div>
+            </section>
+
+            <section id="which" class="lesson-section">
+                <h2>ActorComponent vs SceneComponent</h2>
+                <p>There are two component base classes, and the choice is simple once you know the rule:</p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Base</th><th>Has a transform?</th><th>Use for</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>UActorComponent</code></td><td><strong>No</strong> — pure logic/data</td><td>Health, inventory, AI state, cooldowns — things without a position</td></tr>
+                            <tr><td><code>USceneComponent</code></td><td><strong>Yes</strong> — location/rotation/scale, can be attached in the hierarchy</td><td>Anything that needs a place in the world: a spawn point, an attach socket, a camera boom</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card card-success">
+                    <h4>✅ The deciding question</h4>
+                    <p><strong>"Does this thing need a position in the world?"</strong> Yes → <code>USceneComponent</code> (or a subclass like a mesh/light/camera). No → <code>UActorComponent</code>. Health has no position, so it's a <code>UActorComponent</code>. A "muzzle location" has a position, so it's a <code>USceneComponent</code>. Note every visible component (mesh, light) is ultimately a <code>USceneComponent</code>, because it must be somewhere.</p>
+                </div>
+            </section>
+
+            <section id="write" class="lesson-section">
+                <h2>Writing a Health Component</h2>
+                <p>Health has no transform, so it's a <code>UActorComponent</code>. Create it via <strong>Tools → New C++ Class → Actor Component</strong>. Header:</p>
+
+                <pre><code class="language-cpp">// HealthComponent.h
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Components/ActorComponent.h"
+#include "HealthComponent.generated.h"
+
+// Meta specifier: makes this component addable in the editor's Add Component menu.
+UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
+class MYPROJECT_API UHealthComponent : public UActorComponent
+{
+    GENERATED_BODY()
+
+public:
+    UHealthComponent();
+
+protected:
+    virtual void BeginPlay() override;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Health")
+    float MaxHealth = 100.0f;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Health")
+    float CurrentHealth = 0.0f;
+
+public:
+    // Apply damage; returns true if this brought health to zero (a "kill").
+    UFUNCTION(BlueprintCallable, Category = "Health")
+    bool ApplyDamage(float Amount);
+
+    UFUNCTION(BlueprintPure, Category = "Health")
+    bool IsDead() const { return CurrentHealth &lt;= 0.0f; }
+
+    UFUNCTION(BlueprintPure, Category = "Health")
+    float GetHealthPercent() const;
+};</code></pre>
+
+                <p>Source:</p>
+
+                <pre><code class="language-cpp">// HealthComponent.cpp
+#include "HealthComponent.h"
+
+UHealthComponent::UHealthComponent()
+{
+    // This component has no per-frame work, so disable Tick for performance.
+    PrimaryComponentTick.bCanEverTick = false;
+}
+
+void UHealthComponent::BeginPlay()
+{
+    Super::BeginPlay();
+    CurrentHealth = MaxHealth;   // start at full when the game begins
+}
+
+bool UHealthComponent::ApplyDamage(float Amount)
+{
+    if (IsDead() || Amount &lt;= 0.0f)
+    {
+        return false;
+    }
+
+    CurrentHealth = FMath::Clamp(CurrentHealth - Amount, 0.0f, MaxHealth);
+    UE_LOG(LogTemp, Log, TEXT("%s health: %.0f/%.0f"),
+        *GetOwner()->GetName(), CurrentHealth, MaxHealth);
+
+    return IsDead();   // true means this hit was fatal
+}
+
+float UHealthComponent::GetHealthPercent() const
+{
+    return (MaxHealth &gt; 0.0f) ? (CurrentHealth / MaxHealth) : 0.0f;
+}</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Don't forget <code>BlueprintSpawnableComponent</code></h4>
+                    <p>Without <code>meta = (BlueprintSpawnableComponent)</code>, your component won't appear in the editor's <strong>Add Component</strong> dropdown or be addable in Blueprints. It's the specifier that makes a custom component usable by designers — easy to omit and then wonder why the component is "missing."</p>
+                </div>
+            </section>
+
+            <section id="owner" class="lesson-section">
+                <h2>Reaching the Owner</h2>
+                <p>A component often needs to talk to the actor it's attached to — its <strong>owner</strong>. <code>GetOwner()</code> returns that actor as an <code>AActor*</code>; cast it when you need a specific type.</p>
+
+                <pre><code class="language-cpp">void UHealthComponent::BeginPlay()
+{
+    Super::BeginPlay();
+    CurrentHealth = MaxHealth;
+
+    // Generic owner access:
+    AActor* Owner = GetOwner();
+    if (!Owner) { return; }
+
+    // Need a specific type? Cast safely (Lesson 2.2):
+    if (ACharacter* OwningCharacter = Cast&lt;ACharacter&gt;(Owner))
+    {
+        // ... do character-specific setup, e.g. bind to its events ...
+    }
+}</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 Keep components loosely coupled</h4>
+                    <p>A well-designed component tries <em>not</em> to assume a specific owner type. A <code>UHealthComponent</code> that works on <em>any</em> <code>AActor</code> is reusable on barrels and characters alike; one that hard-requires <code>ACharacter</code> is not. Cast only when you truly need the specialization, and handle the "wrong owner" case gracefully. This pays off when we broadcast events in Lesson 3.5 and 5.4.</p>
+                </div>
+            </section>
+
+            <section id="use" class="lesson-section">
+                <h2>Using the Component</h2>
+                <p>Add the component to an actor in that actor's constructor, then use it:</p>
+
+                <pre><code class="language-cpp">// In some AEnemy constructor:
+#include "HealthComponent.h"
+
+AEnemy::AEnemy()
+{
+    // Components are created the same way as any subobject.
+    Health = CreateDefaultSubobject&lt;UHealthComponent&gt;(TEXT("Health"));
+}
+
+// Later, when the enemy is hit:
+void AEnemy::OnHit(float Damage)
+{
+    const bool bKilled = Health->ApplyDamage(Damage);
+    if (bKilled)
+    {
+        // handle death — ragdoll, score, destroy, etc.
+        Destroy();
+    }
+}</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ The reuse payoff, realized</h4>
+                    <p>That exact same <code>UHealthComponent</code> now drops onto a barrel, a turret, or a destructible wall with zero changes — each just calls <code>ApplyDamage</code>. And because it's <code>BlueprintSpawnableComponent</code>, a designer can add it to a Blueprint actor with no code at all. One component, unlimited owners: that's the whole point.</p>
+                </div>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: A cooldown component</h3>
+                    <p><strong>Objective:</strong> Write a reusable <code>UCooldownComponent</code> (a <code>UActorComponent</code> — it has no transform).</p>
+                    <p>Requirements: an <code>EditAnywhere</code> <code>CooldownDuration</code>; a <code>BlueprintCallable</code> <code>bool TryUse()</code> that returns true and starts a cooldown if ready, false if still cooling; a <code>BlueprintPure</code> <code>bool IsReady() const</code>. (Hint: you can track readiness with a timestamp using <code>GetWorld()->GetTimeSeconds()</code>.)</p>
+
+                    <details>
+                        <summary>💡 Hint — TryUse</summary>
+                        <pre><code class="language-cpp">bool UCooldownComponent::TryUse()
+{
+    if (!IsReady()) { return false; }
+    LastUsedTime = GetWorld()->GetTimeSeconds();
+    return true;
+}
+
+bool UCooldownComponent::IsReady() const
+{
+    return GetWorld()->GetTimeSeconds() - LastUsedTime &gt;= CooldownDuration;
+}</code></pre>
+                    </details>
+
+                    <details>
+                        <summary>✅ Why a UActorComponent?</summary>
+                        <p>A cooldown is pure state and logic — it has no position in the world — so <code>UActorComponent</code> is correct. If you'd chosen <code>USceneComponent</code>, you'd be paying for a transform you never use.</p>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> You need a component representing "current ammo" (no position). Which base?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — no transform needed, so UActorComponent.">A) <code>UActorComponent</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="That carries an unused transform.">B) <code>USceneComponent</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="That's an actor, not a component.">C) <code>AActor</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> How does a component reference the actor it's attached to?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — GetOwner() returns the owning AActor.">A) <code>GetOwner()</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="No such call for the parent actor.">B) <code>GetParentActor()</code> only</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Components don't spawn their owners.">C) It spawns its owner</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> Which meta makes a custom component addable in the editor's Add Component menu?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — BlueprintSpawnableComponent exposes it for adding to actors/Blueprints.">A) <code>meta = (BlueprintSpawnableComponent)</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="Not a real component specifier.">B) <code>meta = (Addable)</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="That's a property clamp.">C) <code>meta = (ClampMin)</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li><strong>Composition over inheritance</strong>: package behavior in a component and attach it to any actor — ask "what does it <em>have</em>," not "what <em>is</em> it."</li>
+                        <li><strong><code>UActorComponent</code></strong> for logic/data with no position; <strong><code>USceneComponent</code></strong> when it needs a transform in the world.</li>
+                        <li>Expose component API with <code>UFUNCTION(BlueprintCallable/Pure)</code>; mark the class <code>meta = (BlueprintSpawnableComponent)</code> so it's addable.</li>
+                        <li>Reach the owning actor with <code>GetOwner()</code>; <code>Cast</code> only when you need a specific type, and keep components loosely coupled.</li>
+                        <li>Add components in the owner's constructor via <code>CreateDefaultSubobject</code> — the same pattern as any subobject.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/components-in-unreal-engine" target="_blank" rel="noopener">Components (Epic)</a></li>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/creating-and-attaching-components-in-unreal-engine" target="_blank" rel="noopener">Creating &amp; Attaching Components (Epic)</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p>You can build actors and the components that power them. Next: bringing actors into and out of existence at runtime — <strong>spawning, destroying, and iterating</strong> actors, the dynamic side of the world.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Lesson complete!</h3>
+                    <p>Composition unlocked. Let's make actors appear and vanish on command.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m03_l02_writing_actors_in_cpp.html" class="prev-lesson">← Previous: Writing Actors in C++</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m03_l04_spawning_and_lifecycle.html" class="next-lesson">Next: Spawning, Destroying &amp; Iterating Actors →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

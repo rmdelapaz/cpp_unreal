@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="A complete networked gameplay feature in Unreal Engine 5.8 C++: a replicated pickup and health system combining authority, replication, RepNotify, and RPCs end to end.">
+    <meta name="author" content="Ray de la Paz">
+    <title>Replicating a Gameplay Feature — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 10</a></li>
+            <li aria-current="page">Lesson 10.4: Replicating a Gameplay Feature</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>🎯 Lesson 10.4: Replicating a Gameplay Feature</h1>
+                <p class="lead">Time to assemble everything. We'll build a complete, correctly-networked <strong>health pickup</strong> — from overlap to healing to every client's HUD updating — combining authority, replication, RepNotify, and RPCs. This is the pattern you'll reuse for every multiplayer feature you ever write.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Plan a networked feature by deciding what's authoritative, replicated, and cosmetic</li>
+                        <li>Handle overlap on the server only and heal authoritatively</li>
+                        <li>Replicate the consumed state and destroy correctly for all clients</li>
+                        <li>Broadcast a cosmetic pickup effect to everyone</li>
+                        <li>Trace the full data flow across server and clients</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 75 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#plan" class="toc-link">Planning the Feature</a></li>
+                        <li><a href="#overlap" class="toc-link">Server-Side Overlap</a></li>
+                        <li><a href="#state" class="toc-link">Replicated Consumed State</a></li>
+                        <li><a href="#cosmetic" class="toc-link">Cosmetic Multicast</a></li>
+                        <li><a href="#flow" class="toc-link">The Complete Flow</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="plan" class="lesson-section">
+                <h2>Planning the Feature</h2>
+                <p>Before writing a networked feature, categorize each part. This planning step prevents almost every multiplayer bug:</p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Part of the feature</th><th>Category</th><th>Tool</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>Detecting the overlap &amp; deciding to heal</td><td>Authoritative</td><td>Server-only + <code>HasAuthority()</code></td></tr>
+                            <tr><td>The player's new health</td><td>Replicated state</td><td><code>ReplicatedUsing</code> (RepNotify)</td></tr>
+                            <tr><td>The pickup being consumed / gone</td><td>Replicated state</td><td>Replicated bool + <code>Destroy()</code> on server</td></tr>
+                            <tr><td>Heal particle &amp; sound</td><td>Cosmetic</td><td><code>NetMulticast</code> RPC</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card card-accent">
+                    <h4>📖 The three-category test</h4>
+                    <p>Ask of every piece: is it <strong>authoritative</strong> (a real decision → server only), <strong>state</strong> that others must know (→ replicate), or <strong>cosmetic</strong> (→ multicast)? Getting these categories right up front is 90% of networking. The health pickup you built way back in Lesson 5.1 was single-player; now we network it by sorting its parts into these three buckets.</p>
+                </div>
+            </section>
+
+            <section id="overlap" class="lesson-section">
+                <h2>Server-Side Overlap</h2>
+                <p>The overlap fires on all machines, but only the <strong>server</strong> should decide the heal. Guard it immediately.</p>
+
+                <pre><code class="language-cpp">// HealthPickup.cpp
+AHealthPickup::AHealthPickup()
+{
+    bReplicates = true;   // networked actor (Lesson 10.2)
+
+    Collision = CreateDefaultSubobject&lt;USphereComponent&gt;(TEXT("Collision"));
+    RootComponent = Collision;
+    Collision->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
+}
+
+void AHealthPickup::BeginPlay()
+{
+    Super::BeginPlay();
+    // Bind overlap on all machines; we'll authority-guard inside the handler.
+    Collision->OnComponentBeginOverlap.AddDynamic(this, &amp;AHealthPickup::OnBeginOverlap);
+}
+
+void AHealthPickup::OnBeginOverlap(UPrimitiveComponent* Comp, AActor* Other,
+    UPrimitiveComponent* OtherComp, int32 BodyIndex, bool bFromSweep, const FHitResult&amp; Sweep)
+{
+    // ONLY the server decides the pickup is consumed (Lesson 10.1).
+    if (!HasAuthority() || bConsumed) { return; }
+    if (!IsValid(Other) || Other == this) { return; }
+
+    // Authoritative heal (server-side, via the replicated health component).
+    if (UHealthComponent* HC = Other->FindComponentByClass&lt;UHealthComponent&gt;())
+    {
+        HC->Heal(HealAmount);      // changes replicated CurrentHealth (Lesson 10.2)
+
+        bConsumed = true;          // replicated state (next section)
+        MulticastPlayPickupFX();   // cosmetic for everyone (Lesson 10.3)
+        SetLifeSpan(0.1f);         // let the multicast reach clients, then destroy
+    }
+}</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Why <code>SetLifeSpan</code> instead of instant <code>Destroy()</code>?</h4>
+                    <p>If the server <code>Destroy()</code>s the pickup the same frame, the <code>MulticastPlayPickupFX</code> RPC may not reach clients before the actor is gone (RPCs on a destroyed actor are dropped). A tiny <code>SetLifeSpan</code> (Lesson 3.4) gives the multicast a moment to propagate, then the actor is destroyed on the server and that destruction replicates to clients. This ordering subtlety is exactly the kind of thing that "works in Standalone" hides.</p>
+                </div>
+            </section>
+
+            <section id="state" class="lesson-section">
+                <h2>Replicated Consumed State</h2>
+                <p><code>bConsumed</code> is replicated so late-joining or lagging clients don't see an already-taken pickup as still available, and so we can hide it consistently.</p>
+
+                <pre><code class="language-cpp">// HealthPickup.h
+UPROPERTY(ReplicatedUsing = OnRep_Consumed)
+bool bConsumed = false;
+
+UFUNCTION()
+void OnRep_Consumed();</code></pre>
+
+                <pre><code class="language-cpp">// HealthPickup.cpp
+void AHealthPickup::GetLifetimeReplicatedProps(TArray&lt;FLifetimeProperty&gt;&amp; Out) const
+{
+    Super::GetLifetimeReplicatedProps(Out);
+    DOREPLIFETIME(AHealthPickup, bConsumed);   // register (Lesson 10.2)
+}
+
+// Runs on clients when bConsumed replicates true — hide it immediately
+// (before the Destroy replication arrives, for a snappy feel).
+void AHealthPickup::OnRep_Consumed()
+{
+    if (bConsumed)
+    {
+        Collision->SetVisibility(false);
+        SetActorEnableCollision(false);
+    }
+}</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ Belt and suspenders</h4>
+                    <p>The actor's <code>Destroy()</code> (via lifespan) already removes it everywhere. Replicating <code>bConsumed</code> and hiding in <code>OnRep_Consumed</code> makes the pickup <em>appear</em> taken instantly on clients, without waiting for the destroy to propagate — smoother feel, and correct for anyone whose destroy message is delayed. This is the health/door replication pattern from Lesson 10.2 applied again.</p>
+                </div>
+            </section>
+
+            <section id="cosmetic" class="lesson-section">
+                <h2>Cosmetic Multicast</h2>
+                <p>The heal sparkle and sound should play on <em>every</em> machine — a textbook <code>NetMulticast</code> (Lesson 10.3), <code>Unreliable</code> because it's purely cosmetic.</p>
+
+                <pre><code class="language-cpp">// HealthPickup.h
+UFUNCTION(NetMulticast, Unreliable)
+void MulticastPlayPickupFX();</code></pre>
+
+                <pre><code class="language-cpp">// HealthPickup.cpp — runs on server + all clients.
+void AHealthPickup::MulticastPlayPickupFX_Implementation()
+{
+    // Spawn the particle and play the sound at our location — everyone sees it.
+    // UGameplayStatics::SpawnEmitterAtLocation(...); PlaySoundAtLocation(...);
+    UE_LOG(LogTemp, Log, TEXT("Pickup FX played on this machine"));
+}</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 Why multicast the FX but replicate the state?</h4>
+                    <p>The heal <em>amount</em> and <code>bConsumed</code> are <strong>state</strong> everyone must agree on — replicated. The sparkle is a <strong>transient cosmetic</strong> that just needs to play once everywhere — multicast. Mixing these up (multicasting state, or replicating a one-shot effect) is the classic design error the categorization step (planning section) prevents.</p>
+                </div>
+            </section>
+
+            <section id="flow" class="lesson-section">
+                <h2>The Complete Flow</h2>
+                <p>Here is the entire feature, every machine accounted for:</p>
+
+                <div class="mermaid">
+                    graph TD
+                        O["Player overlaps pickup<br/>(fires on all machines)"] --> A{"HasAuthority?"}
+                        A -->|"No (client)"| Skip["Ignore — wait for server"]
+                        A -->|"Yes (server)"| Heal["Server: Heal() → CurrentHealth changes"]
+                        Heal --> Rep1["CurrentHealth replicates → clients' HUD updates (10.2 + 9.2)"]
+                        Heal --> Cons["Server: bConsumed = true"]
+                        Cons --> Rep2["OnRep_Consumed on clients → hide pickup"]
+                        Heal --> MC["Server: MulticastPlayPickupFX"]
+                        MC --> FX["Sparkle + sound on server + all clients"]
+                        Heal --> Life["SetLifeSpan → Destroy replicates to all"]
+                </div>
+                <figure>
+                    <figcaption>Figure 1: The full networked pickup. Authority gates the decision; replication carries state to every client; multicast carries the cosmetic. Every player sees a correct, synchronized result.</figcaption>
+                </figure>
+
+                <div class="card card-success">
+                    <h4>✅ You just networked the whole course</h4>
+                    <p>This one feature uses collision (5.1), <code>FindComponentByClass</code> (3.5), the health component (3.3), <code>SetLifeSpan</code>/<code>Destroy</code> (3.4), authority (10.1), replication + RepNotify (10.2), and a Multicast RPC (10.3) — and the health replication drives the HUD from Module 9. Every module you've built now cooperates across the network. Multiplayer isn't a separate skill bolted on; it's the same patterns, categorized into authoritative / replicated / cosmetic.</p>
+                </div>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: Network a score pickup</h3>
+                    <p><strong>Objective:</strong> Apply the three-category plan to a new feature.</p>
+                    <ol>
+                        <li>A coin pickup grants points to the overlapping player's <code>PlayerState</code> and plays a chime everywhere.</li>
+                        <li>For each part — overlap decision, the score value, the coin disappearing, the chime — assign a category (authoritative / replicated / cosmetic) and the tool.</li>
+                        <li>Where does the score live so it survives the player's pawn dying (recall Lesson 3.1)?</li>
+                        <li>Write the authority-guard line that belongs at the top of the overlap handler.</li>
+                    </ol>
+
+                    <details>
+                        <summary>✅ Answers</summary>
+                        <ul>
+                            <li>Overlap decision → authoritative (server + <code>HasAuthority()</code>); score value → replicated property on <code>PlayerState</code>; coin gone → server <code>Destroy()</code> (+ optional replicated <code>bConsumed</code>); chime → <code>NetMulticast, Unreliable</code>.</li>
+                            <li>On the <strong>PlayerState</strong> — it's replicated and outlives the pawn (Lesson 3.1).</li>
+                            <li><code>if (!HasAuthority() || bConsumed) { return; }</code></li>
+                        </ul>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> The overlap handler runs on all machines. What guards the actual heal?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — only the server decides, guarded by HasAuthority().">A) <code>if (!HasAuthority()) return;</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="Ticking isn't authority.">B) <code>if (!bCanEverTick) return;</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="No guard = every client heals — wrong.">C) No guard needed</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> The heal sparkle effect should be sent via:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — a cosmetic one-shot for everyone is a NetMulticast.">A) A <code>NetMulticast</code> RPC (cosmetic)</button>
+                            <button class="quiz-option" data-correct="false" data-hint="State is replicated; effects are multicast.">B) A replicated property</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Config is unrelated.">C) A config value</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> Why <code>SetLifeSpan</code> instead of instant <code>Destroy()</code> after multicasting?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — gives the multicast time to reach clients before the actor is destroyed.">A) So the multicast RPC reaches clients before the actor is destroyed</button>
+                            <button class="quiz-option" data-correct="false" data-hint="It's about RPC timing, not performance.">B) It's faster</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Destroy works in multiplayer; timing is the issue.">C) <code>Destroy()</code> doesn't work in multiplayer</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li>Plan every networked feature by categorizing parts as <strong>authoritative</strong> (server), <strong>replicated state</strong>, or <strong>cosmetic</strong> (multicast).</li>
+                        <li>Overlap/decisions run on the <strong>server</strong> (<code>HasAuthority()</code>); the heal goes through the <strong>replicated</strong> health component.</li>
+                        <li>Replicate <code>bConsumed</code> with <strong>RepNotify</strong> to hide the pickup instantly on clients; use <code>SetLifeSpan</code> so a <strong>multicast</strong> can land before <code>Destroy</code>.</li>
+                        <li>Send the sparkle/sound via a <strong><code>NetMulticast, Unreliable</code></strong> RPC — cosmetic, everyone, drop-tolerant.</li>
+                        <li>The feature composes the entire course across the network — multiplayer is the same patterns, correctly categorized.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/networking-and-multiplayer-in-unreal-engine" target="_blank" rel="noopener">Networking &amp; Multiplayer (Epic)</a></li>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/testing-multiplayer-in-unreal-engine" target="_blank" rel="noopener">Testing Multiplayer in PIE (Epic)</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p><strong>Module 10 is complete</strong> — you can build correct multiplayer gameplay in C++. <strong>Module 11</strong> tackles making it all run fast: <strong>async &amp; multithreading</strong>, and <strong>profiling with Unreal Insights</strong>.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Module 10 complete!</h3>
+                    <p>Your gameplay works in multiplayer. Let's make it fast.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m10_l03_rpcs.html" class="prev-lesson">← Previous: RPCs — Server, Client &amp; Multicast</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m11_l01_async_and_multithreading.html" class="next-lesson">Next: Async &amp; Multithreading →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Exposing C++ properties to Blueprint in Unreal Engine 5.8: read/write control, ExposeOnSpawn, categories and meta polish, and change notifications.">
+    <meta name="author" content="Ray de la Paz">
+    <title>Exposing Properties to Blueprint — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 6</a></li>
+            <li aria-current="page">Lesson 6.2: Exposing Properties to Blueprint</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>🎚️ Lesson 6.2: Exposing Properties to Blueprint</h1>
+                <p class="lead">Functions are how Blueprint <em>acts</em>; properties are how designers <em>configure</em>. This lesson goes deeper than Lesson 2.3 on turning C++ member variables into well-organized, safe, discoverable knobs — the difference between a C++ class designers love and one they dread.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Combine edit and Blueprint-access specifiers deliberately for each property</li>
+                        <li>Use <code>meta = (ExposeOnSpawn)</code> so a property can be set at spawn</li>
+                        <li>Polish the inspector with categories, tooltips, and edit conditions</li>
+                        <li>Guard C++-owned state with <code>BlueprintReadOnly</code> and getters</li>
+                        <li>React to editor edits with <code>PostEditChangeProperty</code></li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 45 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#recap" class="toc-link">The Two Axes, Applied</a></li>
+                        <li><a href="#exposeonspawn" class="toc-link">ExposeOnSpawn</a></li>
+                        <li><a href="#polish" class="toc-link">Inspector Polish</a></li>
+                        <li><a href="#guarding" class="toc-link">Guarding State</a></li>
+                        <li><a href="#posteditchange" class="toc-link">Reacting to Edits</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="recap" class="lesson-section">
+                <h2>The Two Axes, Applied</h2>
+                <p>Recall the two independent axes from Lesson 2.3: <strong>editor access</strong> (<code>EditAnywhere</code> / <code>VisibleAnywhere</code> / <code>Edit*Only</code>) and <strong>Blueprint access</strong> (<code>BlueprintReadWrite</code> / <code>BlueprintReadOnly</code>). Here's how to combine them purposefully for a real class:</p>
+
+                <pre><code class="language-cpp">// Designer tunes per-instance; BP logic can also change it at runtime:
+UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat")
+float Damage = 25.0f;
+
+// A type-wide constant: set on the Blueprint default only, BP can read it:
+UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat")
+int32 MagazineSize = 30;
+
+// Runtime state C++ owns; BP (e.g. HUD) reads but cannot set:
+UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State")
+int32 CurrentAmmo = 30;
+
+// A component reference — shown for inspection, not reassigned by hand:
+UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+TObjectPtr&lt;UStaticMeshComponent&gt; Mesh;</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 Design the surface, don't just expose everything</h4>
+                    <p>Marking every field <code>EditAnywhere, BlueprintReadWrite</code> is a smell — it invites designers to break invariants and clutters the inspector. Ask per field: <em>who should change this, and when?</em> Tunable → <code>EditAnywhere</code>. Type constant → <code>EditDefaultsOnly</code>. C++-owned state → <code>VisibleAnywhere, BlueprintReadOnly</code>. A deliberate surface is a gift to your designers.</p>
+                </div>
+            </section>
+
+            <section id="exposeonspawn" class="lesson-section">
+                <h2>ExposeOnSpawn</h2>
+                <p>When a Blueprint spawns your actor via "Spawn Actor from Class," it can set exposed properties <em>at spawn time</em> — pins appear right on the spawn node. Mark a property with <code>meta = (ExposeOnSpawn = true)</code>.</p>
+
+                <pre><code class="language-cpp">// A projectile whose damage and speed are set when a weapon spawns it:
+UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projectile",
+    meta = (ExposeOnSpawn = true))
+float Damage = 10.0f;
+
+UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Projectile",
+    meta = (ExposeOnSpawn = true))
+float Speed = 2000.0f;</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ The Blueprint mirror of SpawnActorDeferred</h4>
+                    <p>Remember <code>SpawnActorDeferred</code> from Lesson 3.4 — set properties before <code>BeginPlay</code>? <code>ExposeOnSpawn</code> is the Blueprint equivalent: the spawn node exposes those properties as input pins, and they're applied before the actor begins play. So a designer can spawn a projectile and set its damage right on the node — no C++ change to the spawner. C++ and Blueprint solving the same problem, each in their idiom.</p>
+                </div>
+            </section>
+
+            <section id="polish" class="lesson-section">
+                <h2>Inspector Polish</h2>
+                <p>Small touches make a C++ class feel professional in the editor. Building on the <code>meta</code> options from Lesson 2.3:</p>
+
+                <pre><code class="language-cpp">UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat|Ranged",
+    meta = (ClampMin = "0.0", ClampMax = "1000.0", UIMin = "0.0", UIMax = "500.0",
+            ToolTip = "Base damage per hit before modifiers."))
+float Damage = 25.0f;
+
+// A dependent property that only appears when relevant:
+UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat")
+bool bUsesSpread = false;
+
+UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat",
+    meta = (EditCondition = "bUsesSpread", ClampMin = "0.0"))
+float SpreadAngle = 2.0f;</code></pre>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Polish</th><th>Effect</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>Category = "A|B"</code></td><td>Nested, collapsible groups in Details</td></tr>
+                            <tr><td><code>ToolTip = "..."</code></td><td>Hover help (a code comment above the property also becomes a tooltip)</td></tr>
+                            <tr><td><code>ClampMin/Max</code></td><td>Hard value limits (typed values clamped)</td></tr>
+                            <tr><td><code>EditCondition</code></td><td>Show/enable a property only when another is set</td></tr>
+                            <tr><td><code>Units = "cm"</code></td><td>Displays a unit and enables unit conversion</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card card-success">
+                    <h4>✅ Comments become tooltips</h4>
+                    <p>A <code>// ...</code> comment directly above a <code>UPROPERTY</code> is picked up by UHT as its tooltip — so documenting your code documents your inspector at the same time. Two birds, one comment.</p>
+                </div>
+            </section>
+
+            <section id="guarding" class="lesson-section">
+                <h2>Guarding State</h2>
+                <p>Some values are dangerous to let Blueprint set directly — health, ammo, an internal index — because a bad write breaks an invariant. Expose them <strong>read-only</strong> and provide a <code>BlueprintCallable</code> setter that enforces the rules.</p>
+
+                <pre><code class="language-cpp">// Read-only to Blueprint — no direct writes.
+UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State")
+float CurrentHealth = 100.0f;
+
+// The ONLY sanctioned way for Blueprint to change health — it clamps &amp; notifies.
+UFUNCTION(BlueprintCallable, Category = "State")
+void SetHealth(float NewHealth)
+{
+    CurrentHealth = FMath::Clamp(NewHealth, 0.0f, MaxHealth);
+    OnHealthChanged.Broadcast(CurrentHealth, MaxHealth);   // event from Lesson 5.4
+}</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 Read-only property + Callable setter = encapsulation</h4>
+                    <p>This pairing gives Blueprint access <em>through your rules</em>: it can read the value freely and change it only via a function that clamps, validates, and fires events. It's the interop version of a private field with a public setter — designers get flexibility, you keep your invariants. Compare this to a bare <code>BlueprintReadWrite float CurrentHealth</code>, where any graph could set it to -999 and skip your death event.</p>
+                </div>
+            </section>
+
+            <section id="posteditchange" class="lesson-section">
+                <h2>Reacting to Edits</h2>
+                <p>Sometimes you want C++ to respond the moment a designer changes a property <em>in the editor</em> — e.g. rebuild something when a size value changes. Override <code>PostEditChangeProperty</code> (editor-only).</p>
+
+                <pre><code class="language-cpp">#if WITH_EDITOR
+void AMyActor::PostEditChangeProperty(FPropertyChangedEvent&amp; Event)
+{
+    Super::PostEditChangeProperty(Event);
+
+    // Which property changed?
+    const FName Name = (Event.Property != nullptr) ? Event.Property->GetFName() : NAME_None;
+    if (Name == GET_MEMBER_NAME_CHECKED(AMyActor, GridSize))
+    {
+        RebuildGrid();   // react to the designer's edit immediately
+    }
+}
+#endif</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Editor-only — wrap in WITH_EDITOR</h4>
+                    <p><code>PostEditChangeProperty</code> exists only in editor builds, so guard it with <code>#if WITH_EDITOR</code> or a packaged build won't compile. Use <code>GET_MEMBER_NAME_CHECKED</code> to compare property names — it fails to compile if you typo the member name, unlike a raw string. This hook is for editor-time responsiveness, not runtime logic.</p>
+                </div>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: A polished pickup</h3>
+                    <p><strong>Objective:</strong> Give a pickup a designer-friendly property surface.</p>
+                    <ol>
+                        <li><code>Amount</code> — tuned per instance, BP-writable, clamped 1–999, with a tooltip.</li>
+                        <li><code>PickupType</code> — set only on the Blueprint default, BP-readable.</li>
+                        <li><code>bConsumed</code> — runtime state C++ owns, BP read-only.</li>
+                        <li>Add a <code>meta = (ExposeOnSpawn)</code> to <code>Amount</code> so a spawner can set it on the spawn node.</li>
+                        <li>Provide a <code>BlueprintCallable Consume()</code> that sets <code>bConsumed</code> safely rather than exposing it writable.</li>
+                    </ol>
+
+                    <details>
+                        <summary>✅ Reference</summary>
+                        <pre><code class="language-cpp">UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pickup",
+    meta = (ClampMin = "1", ClampMax = "999", ExposeOnSpawn = true,
+            ToolTip = "How much this pickup grants."))
+int32 Amount = 25;
+
+UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Pickup")
+EPickupKind PickupType = EPickupKind::Health;
+
+UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State")
+bool bConsumed = false;
+
+UFUNCTION(BlueprintCallable, Category = "Pickup")
+void Consume() { bConsumed = true; /* ...effects, Destroy... */ }</code></pre>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> A value Blueprint should read but never set directly is best marked:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — BlueprintReadOnly (often with VisibleAnywhere) protects C++-owned state.">A) <code>VisibleAnywhere, BlueprintReadOnly</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="That lets BP write it.">B) <code>EditAnywhere, BlueprintReadWrite</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="Then BP couldn't read it at all.">C) No specifiers</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> What does <code>meta = (ExposeOnSpawn = true)</code> do?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — it adds an input pin on the Blueprint Spawn Actor node.">A) Lets a Blueprint set the property on the Spawn Actor node</button>
+                            <button class="quiz-option" data-correct="false" data-hint="It's about spawning, not ticking.">B) Enables Tick for the actor</button>
+                            <button class="quiz-option" data-correct="false" data-hint="It doesn't replicate.">C) Replicates the property</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> To let Blueprint change protected state safely, you should:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — read-only property plus a BlueprintCallable setter that enforces rules.">A) Keep it <code>BlueprintReadOnly</code> and add a <code>BlueprintCallable</code> setter that validates</button>
+                            <button class="quiz-option" data-correct="false" data-hint="That skips your invariants.">B) Just make it <code>BlueprintReadWrite</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="Hiding it entirely blocks legitimate reads.">C) Hide it from Blueprint completely</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li>Combine the <strong>editor-access</strong> and <strong>Blueprint-access</strong> axes deliberately per property — design the surface, don't expose everything.</li>
+                        <li><code>meta = (ExposeOnSpawn = true)</code> adds set-at-spawn pins on the Blueprint Spawn node — the BP mirror of <code>SpawnActorDeferred</code>.</li>
+                        <li>Polish with nested <code>Category</code>, <code>ToolTip</code> (or code comments), <code>ClampMin/Max</code>, <code>EditCondition</code>, and <code>Units</code>.</li>
+                        <li>Guard invariant-critical state as <strong><code>BlueprintReadOnly</code> + a <code>BlueprintCallable</code> setter</strong> that validates and notifies.</li>
+                        <li><code>PostEditChangeProperty</code> (wrapped in <code>#if WITH_EDITOR</code>) reacts to editor edits; use <code>GET_MEMBER_NAME_CHECKED</code>.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-engine-uproperties" target="_blank" rel="noopener">UProperties (Epic)</a></li>
+                    <li><a href="https://benui.ca/unreal/uproperty/" target="_blank" rel="noopener">BenUI — UPROPERTY specifier reference</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p>Functions and properties cross the boundary. But what about your own <em>types</em> — the <code>USTRUCT</code>s and <code>UENUM</code>s from Module 2? Next we make them first-class Blueprint citizens so you can pass rich data across the boundary, not just primitives.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Lesson complete!</h3>
+                    <p>Your inspectors shine. Now let's expose custom data types.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m06_l01_exposing_functions.html" class="prev-lesson">← Previous: Exposing Functions to Blueprint</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m06_l03_exposing_structs_enums_data.html" class="next-lesson">Next: Exposing Structs, Enums &amp; Data →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

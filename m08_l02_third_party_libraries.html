@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Integrating third-party C++ libraries into Unreal Engine 5.8: header-only vs compiled libs, Build.cs include paths and PublicAdditionalLibraries, DLLs, and runtime dependencies.">
+    <meta name="author" content="Ray de la Paz">
+    <title>Integrating Third-Party Libraries — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 8</a></li>
+            <li aria-current="page">Lesson 8.2: Integrating Third-Party Libraries</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>📚 Lesson 8.2: Integrating Third-Party Libraries</h1>
+                <p class="lead">Sometimes the code you need already exists — a physics solver, an analytics SDK, a JSON parser, a networking library. Linking external C++ into Unreal is a superpower Blueprint simply doesn't have, and it's all done through the <code>.Build.cs</code> you now understand.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Distinguish header-only, static, and dynamic (DLL) libraries</li>
+                        <li>Add include paths and link libraries via <code>.Build.cs</code></li>
+                        <li>Stage a runtime DLL so it ships with the game</li>
+                        <li>Wrap third-party headers to avoid Unreal warnings-as-errors</li>
+                        <li>Decide where third-party code lives in the project</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 60 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#kinds" class="toc-link">Three Kinds of Library</a></li>
+                        <li><a href="#headeronly" class="toc-link">Header-Only Libraries</a></li>
+                        <li><a href="#compiled" class="toc-link">Static &amp; Dynamic Libraries</a></li>
+                        <li><a href="#runtimedll" class="toc-link">Shipping a DLL</a></li>
+                        <li><a href="#warnings" class="toc-link">Taming Warnings</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="kinds" class="lesson-section">
+                <h2>Three Kinds of Library</h2>
+                <p>How you integrate a library depends on how it's distributed. There are three forms, in increasing integration effort:</p>
+
+                <div class="mermaid">
+                    graph TD
+                        H["Header-only<br/>(just .h files)"] --> He["Add include path. Done."]
+                        S["Static library<br/>(.lib / .a)"] --> Se["Include path + link the lib"]
+                        D["Dynamic library<br/>(.dll / .so / .dylib)"] --> De["Include path + link import lib + SHIP the runtime binary"]
+                </div>
+                <figure>
+                    <figcaption>Figure 1: The three library forms. Header-only is trivial; static links into your binary; dynamic must also be staged alongside the packaged game so it loads at runtime.</figcaption>
+                </figure>
+
+                <div class="card card-accent">
+                    <h4>📖 Where third-party code lives</h4>
+                    <p>Convention is a <code>ThirdParty/</code> folder — either under your project's <code>Source/</code> or in a dedicated module/plugin. Inside, keep the library's <code>include/</code> headers and its <code>lib/</code> binaries organized by platform. Keeping it self-contained makes the <code>.Build.cs</code> paths clean and the dependency obvious to teammates.</p>
+                </div>
+            </section>
+
+            <section id="headeronly" class="lesson-section">
+                <h2>Header-Only Libraries</h2>
+                <p>The easiest case — a library that's entirely in headers (many modern C++ libs are). You just tell the build where the headers are.</p>
+
+                <pre><code class="language-csharp">public class MyModule : ModuleRules
+{
+    public MyModule(ReadOnlyTargetRules Target) : base(Target)
+    {
+        PublicDependencyModuleNames.AddRange(new string[]
+        { "Core", "CoreUObject", "Engine" });
+
+        // Point the compiler at the header-only library's include folder.
+        PublicIncludePaths.Add(
+            Path.Combine(ModuleDirectory, "ThirdParty", "somelib", "include"));
+    }
+}</code></pre>
+
+                <pre><code class="language-cpp">// Then just include and use it in your .cpp:
+#include "somelib/somelib.hpp"
+
+void UMyClass::DoThing()
+{
+    somelib::Widget w;   // the third-party API, now available
+}</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ ModuleDirectory keeps paths portable</h4>
+                    <p>Use <code>Path.Combine(ModuleDirectory, ...)</code> rather than an absolute path — <code>ModuleDirectory</code> resolves to wherever the module is on any machine, so the project builds for every teammate and on CI without edits. Absolute paths are a classic "works on my machine" trap.</p>
+                </div>
+            </section>
+
+            <section id="compiled" class="lesson-section">
+                <h2>Static &amp; Dynamic Libraries</h2>
+                <p>A precompiled library adds a linking step: you point at the headers <em>and</em> the library binary. For a static lib, that's all — it gets baked into your module's binary.</p>
+
+                <pre><code class="language-csharp">public MyModule(ReadOnlyTargetRules Target) : base(Target)
+{
+    // ... dependencies ...
+
+    string ThirdParty = Path.Combine(ModuleDirectory, "ThirdParty", "physicslib");
+
+    // 1) Where the headers are:
+    PublicIncludePaths.Add(Path.Combine(ThirdParty, "include"));
+
+    // 2) The library to link (platform-specific):
+    if (Target.Platform == UnrealTargetPlatform.Win64)
+    {
+        PublicAdditionalLibraries.Add(
+            Path.Combine(ThirdParty, "lib", "Win64", "physicslib.lib"));
+    }
+}</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Match the platform and the runtime</h4>
+                    <p>Precompiled libraries are platform- <em>and</em> often toolchain-specific. A Win64 <code>.lib</code> won't link on Mac; a lib built with a different MSVC runtime can cause obscure link errors. Branch on <code>Target.Platform</code> and use libraries built for the same compiler Unreal uses. This is the fiddliest part of third-party integration — expect to consult the library's build docs.</p>
+                </div>
+            </section>
+
+            <section id="runtimedll" class="lesson-section">
+                <h2>Shipping a DLL</h2>
+                <p>A <em>dynamic</em> library (DLL) needs three things: the headers, an import library to link against, and — critically — the DLL itself <strong>staged next to the packaged game</strong> so it loads at runtime. Miss the last step and it works in the editor but crashes in a packaged build.</p>
+
+                <pre><code class="language-csharp">if (Target.Platform == UnrealTargetPlatform.Win64)
+{
+    string Bin = Path.Combine(ThirdParty, "bin", "Win64");
+
+    // Link against the import library at build time:
+    PublicAdditionalLibraries.Add(Path.Combine(ThirdParty, "lib", "Win64", "netlib.lib"));
+
+    // Tell Unreal about the DLL that must load at runtime:
+    string Dll = Path.Combine(Bin, "netlib.dll");
+    PublicDelayLoadDLLs.Add("netlib.dll");
+
+    // Stage the DLL into the packaged build's binaries:
+    RuntimeDependencies.Add(
+        "$(BinaryOutputDir)/netlib.dll", Dll);
+}</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 Why RuntimeDependencies matters</h4>
+                    <p><code>RuntimeDependencies.Add</code> tells the packaging system to <strong>copy the DLL into the shipped game</strong>. Without it, the editor finds the DLL (it's in your source tree) but the packaged game doesn't — the "works in editor, crashes when packaged" bug. <code>PublicDelayLoadDLLs</code> plus loading the DLL explicitly (via <code>FPlatformProcess::GetDllHandle</code>) gives you control over exactly when it loads. This is the single most-missed step in DLL integration.</p>
+                </div>
+            </section>
+
+            <section id="warnings" class="lesson-section">
+                <h2>Taming Warnings</h2>
+                <p>Unreal compiles your code with strict warnings (often warnings-as-errors). Third-party headers rarely meet Unreal's bar, so including them raw can fail the build. Wrap them in Unreal's third-party include guards.</p>
+
+                <pre><code class="language-cpp">// Wrap noisy third-party includes so their warnings don't break your build:
+#include "Windows/AllowWindowsPlatformTypes.h"   // (Windows-specific headers)
+THIRD_PARTY_INCLUDES_START
+#include "somelib/somelib.hpp"
+THIRD_PARTY_INCLUDES_END
+#include "Windows/HideWindowsPlatformTypes.h"</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ The general pattern</h4>
+                    <p><code>THIRD_PARTY_INCLUDES_START</code>/<code>_END</code> temporarily relax Unreal's warning settings around external headers. The Windows platform-types guards additionally prevent clashes between Windows API macros (like <code>TEXT</code>, <code>GetObject</code>) and Unreal's. Wrap third-party includes this way and a lot of mysterious build failures simply disappear. Keep third-party usage in <code>.cpp</code> files where possible so these includes don't leak into your headers.</p>
+                </div>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: Plan an integration</h3>
+                    <p><strong>Objective:</strong> Map out integrating a hypothetical analytics SDK shipped as a Win64 DLL + headers.</p>
+                    <ol>
+                        <li>Where do the headers and binaries go in the project?</li>
+                        <li>List the <code>.Build.cs</code> additions needed (include path, link, runtime).</li>
+                        <li>What extra step makes it work in a <em>packaged</em> build, not just the editor?</li>
+                        <li>How would you include the SDK header without triggering warnings-as-errors?</li>
+                    </ol>
+
+                    <details>
+                        <summary>✅ Answers</summary>
+                        <ul>
+                            <li><strong>1.</strong> A <code>ThirdParty/analytics/</code> folder with <code>include/</code> and <code>bin/lib per-platform</code>.</li>
+                            <li><strong>2.</strong> <code>PublicIncludePaths.Add(include)</code>, <code>PublicAdditionalLibraries.Add(.lib)</code>, <code>PublicDelayLoadDLLs.Add("analytics.dll")</code>.</li>
+                            <li><strong>3.</strong> <code>RuntimeDependencies.Add(...)</code> to stage the DLL into the packaged binaries.</li>
+                            <li><strong>4.</strong> Wrap the include in <code>THIRD_PARTY_INCLUDES_START/END</code> (plus Windows platform-type guards).</li>
+                        </ul>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> A header-only library needs only:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — just add the include path; there's nothing to link.">A) An include path in <code>.Build.cs</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="Nothing to link for header-only.">B) A linked <code>.lib</code> and a staged DLL</button>
+                            <button class="quiz-option" data-correct="false" data-hint="No separate module required.">C) Its own module</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> A DLL integration works in editor but crashes when packaged. Most likely you forgot:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — RuntimeDependencies stages the DLL into the packaged build.">A) <code>RuntimeDependencies.Add</code> to stage the DLL</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Include path affects compiling, not runtime staging.">B) The include path</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Unrelated to packaging the DLL.">C) A <code>UPROPERTY</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> Third-party headers fail Unreal's warnings-as-errors. The fix:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — wrap them in THIRD_PARTY_INCLUDES_START/END.">A) Wrap the includes in <code>THIRD_PARTY_INCLUDES_START/END</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="Editing vendor headers is fragile and unmaintainable.">B) Hand-edit the library's headers to remove warnings</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Disabling all warnings project-wide is a bad trade.">C) Turn off all warnings for the whole project</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li>Integration effort scales with form: <strong>header-only</strong> (include path only) → <strong>static</strong> (+ link) → <strong>dynamic/DLL</strong> (+ stage at runtime).</li>
+                        <li>Add headers with <code>PublicIncludePaths</code> and libs with <code>PublicAdditionalLibraries</code>, using <code>Path.Combine(ModuleDirectory, ...)</code> for portability.</li>
+                        <li>For DLLs, <code>RuntimeDependencies.Add</code> stages the binary into the packaged game — the most-missed step ("works in editor, crashes packaged").</li>
+                        <li>Branch on <code>Target.Platform</code>; match the library's platform and toolchain.</li>
+                        <li>Wrap third-party includes in <code>THIRD_PARTY_INCLUDES_START/END</code> (+ platform-type guards) to survive warnings-as-errors; keep usage in <code>.cpp</code>.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/integrating-third-party-libraries-into-unreal-engine" target="_blank" rel="noopener">Integrating Third-Party Libraries (Epic)</a></li>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/build-tools-in-unreal-engine" target="_blank" rel="noopener">Unreal Build Tools (Epic)</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p>You can organize your modules and pull in external code. The module finale packages your work for reuse: <strong>writing a C++ plugin</strong> — a self-contained bundle you can drop into any project or share.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Lesson complete!</h3>
+                    <p>External code links cleanly. Now let's package your own for reuse.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m08_l01_modules_and_build_cs.html" class="prev-lesson">← Previous: Modules in Depth</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m08_l03_writing_a_cpp_plugin.html" class="next-lesson">Next: Writing a C++ Plugin →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

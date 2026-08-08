@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Spawning, destroying, and iterating actors at runtime in Unreal Engine 5.8 C++: SpawnActor, SpawnActorDeferred, Destroy, TSubclassOf, and actor iterators.">
+    <meta name="author" content="Ray de la Paz">
+    <title>Spawning, Destroying &amp; Iterating Actors — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 3</a></li>
+            <li aria-current="page">Lesson 3.4: Spawning, Destroying &amp; Iterating Actors</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>✨ Lesson 3.4: Spawning, Destroying &amp; Iterating Actors</h1>
+                <p class="lead">Levels aren't static. Bullets, enemies, effects, and pickups come into being and vanish constantly. This lesson covers the runtime lifecycle from code: creating actors with <code>SpawnActor</code>, removing them with <code>Destroy</code>, and finding the ones already out there.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Spawn actors at runtime with <code>SpawnActor</code> and set spawn transform &amp; params</li>
+                        <li>Use <code>TSubclassOf&lt;T&gt;</code> to let designers pick what to spawn</li>
+                        <li>Initialize spawn-time data safely with <code>SpawnActorDeferred</code></li>
+                        <li>Destroy actors correctly and understand deferred destruction</li>
+                        <li>Find existing actors with <code>TActorIterator</code> and gameplay statics</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 60 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#subclassof" class="toc-link">TSubclassOf: What to Spawn</a></li>
+                        <li><a href="#spawn" class="toc-link">SpawnActor</a></li>
+                        <li><a href="#deferred" class="toc-link">Deferred Spawning</a></li>
+                        <li><a href="#destroy" class="toc-link">Destroying Actors</a></li>
+                        <li><a href="#iterate" class="toc-link">Finding Actors</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="subclassof" class="lesson-section">
+                <h2>TSubclassOf: What to Spawn</h2>
+                <p>To spawn something, code needs to know <em>which class</em>. Hardcoding <code>AEnemy::StaticClass()</code> works but ties the spawner to one type. <code>TSubclassOf&lt;T&gt;</code> is a type-safe class reference you expose as a <code>UPROPERTY</code>, so a designer picks the exact Blueprint to spawn from the editor.</p>
+
+                <pre><code class="language-cpp">// A designer sets this to BP_Goblin, BP_Skeleton, etc. — restricted to AEnemy subclasses.
+UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spawning")
+TSubclassOf&lt;AEnemy&gt; EnemyClass;
+
+// A whole list of spawnable projectile types:
+UPROPERTY(EditAnywhere, Category = "Spawning")
+TArray&lt;TSubclassOf&lt;AProjectile&gt;&gt; ProjectileTypes;</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 Why TSubclassOf and not a plain pointer?</h4>
+                    <p><code>TSubclassOf&lt;AEnemy&gt;</code> guarantees at the editor level that only <code>AEnemy</code> (or subclass) can be assigned — the class picker filters to valid types, preventing "spawn a light as an enemy" mistakes. It's the standard, safe way to make spawning data-driven, and it's central to the hybrid pattern we complete in Module 6.</p>
+                </div>
+            </section>
+
+            <section id="spawn" class="lesson-section">
+                <h2>SpawnActor</h2>
+                <p>The world spawns actors. You call <code>GetWorld()->SpawnActor&lt;T&gt;(...)</code> with a class, a transform, and optional parameters.</p>
+
+                <pre><code class="language-cpp">void ASpawner::SpawnEnemy()
+{
+    if (!EnemyClass) { return; }             // designer hasn't set a class
+
+    UWorld* World = GetWorld();
+    if (!World) { return; }
+
+    const FVector  Location = GetActorLocation() + FVector(200.f, 0.f, 0.f);
+    const FRotator Rotation = GetActorRotation();
+
+    FActorSpawnParameters Params;
+    Params.Owner = this;                     // who spawned it (useful for damage credit)
+    Params.SpawnCollisionHandlingOverride =
+        ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+
+    AEnemy* NewEnemy = World->SpawnActor&lt;AEnemy&gt;(EnemyClass, Location, Rotation, Params);
+    if (NewEnemy)
+    {
+        UE_LOG(LogTemp, Log, TEXT("Spawned %s"), *NewEnemy->GetName());
+    }
+}</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Spawning can fail — always null-check</h4>
+                    <p><code>SpawnActor</code> returns <code>nullptr</code> if it couldn't place the actor (for example, blocked collision with the default handling method). Never assume success. The <code>SpawnCollisionHandlingOverride</code> above tells the engine to nudge the location rather than refuse — useful when you'd rather spawn slightly off than not at all.</p>
+                </div>
+            </section>
+
+            <section id="deferred" class="lesson-section">
+                <h2>Deferred Spawning</h2>
+                <p>Sometimes you need to set properties on an actor <em>before</em> its <code>BeginPlay</code> runs — for example, telling a projectile its damage and speed before it starts moving. A normal <code>SpawnActor</code> runs <code>BeginPlay</code> immediately, too late to configure. <strong>Deferred spawning</strong> splits it into two steps.</p>
+
+                <div class="mermaid">
+                    graph LR
+                        A["SpawnActorDeferred<br/>(actor exists, BeginPlay NOT run)"] --> B["Set properties<br/>Damage, Speed, Owner..."]
+                        B --> C["FinishSpawning<br/>(now BeginPlay runs)"]
+                </div>
+                <figure>
+                    <figcaption>Figure 1: Deferred spawning gives you a window to initialize the actor before it &quot;wakes up&quot; in BeginPlay.</figcaption>
+                </figure>
+
+                <pre><code class="language-cpp">void AWeapon::FireProjectile()
+{
+    const FTransform SpawnTM(GetActorRotation(), GetMuzzleLocation());
+
+    // Step 1: create it, but don't run BeginPlay yet.
+    AProjectile* Proj = GetWorld()->SpawnActorDeferred&lt;AProjectile&gt;(
+        ProjectileClass, SpawnTM, this, GetInstigator());
+
+    if (Proj)
+    {
+        // Step 2: configure it while it's "asleep".
+        Proj->Damage = CurrentDamage;
+        Proj->Speed  = MuzzleSpeed;
+
+        // Step 3: finish — NOW BeginPlay runs, with our values already set.
+        Proj->FinishSpawning(SpawnTM);
+    }
+}</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ When to reach for it</h4>
+                    <p>Use <code>SpawnActorDeferred</code> whenever an actor's <code>BeginPlay</code> depends on values only the spawner knows. If the actor is fully self-contained (a static pickup), a plain <code>SpawnActor</code> is simpler. This pattern returns in the Module 12 capstone for spawning configured gameplay objects.</p>
+                </div>
+            </section>
+
+            <section id="destroy" class="lesson-section">
+                <h2>Destroying Actors</h2>
+                <p>To remove an actor, call <code>Destroy()</code>. Recall from Lesson 2.5: you never <code>delete</code> it — <code>Destroy()</code> marks it for removal and the garbage collector reclaims the memory later.</p>
+
+                <pre><code class="language-cpp">void AProjectile::OnImpact()
+{
+    // Spawn an effect, apply damage... then remove ourselves.
+    Destroy();   // marked for destruction; GC frees it at the next collection
+}
+
+// A self-cleaning actor: destroy after a lifespan (great for effects/projectiles).
+void AProjectile::BeginPlay()
+{
+    Super::BeginPlay();
+    SetLifeSpan(3.0f);   // auto-Destroy() after 3 seconds
+}</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ A destroyed actor isn't gone this instant</h4>
+                    <p>After <code>Destroy()</code>, the actor is <em>pending kill</em> but may still exist for the rest of the frame. Any pointer you hold to it should be checked with <code>IsValid()</code> before use (Lesson 2.5). And an actor should never assume it's safe to touch another actor it just asked to destroy. <code>SetLifeSpan</code> is a clean, self-contained way to auto-destroy short-lived actors without manual timers.</p>
+                </div>
+            </section>
+
+            <section id="iterate" class="lesson-section">
+                <h2>Finding Actors</h2>
+                <p>To act on actors already in the world, you iterate them. Two common tools:</p>
+
+                <h3>TActorIterator — the C++ way</h3>
+                <pre><code class="language-cpp">#include "EngineUtils.h"   // required for TActorIterator
+
+void AGameManager::CountEnemies()
+{
+    int32 Count = 0;
+
+    // Iterates every AEnemy currently in the world.
+    for (TActorIterator&lt;AEnemy&gt; It(GetWorld()); It; ++It)
+    {
+        AEnemy* Enemy = *It;
+        if (IsValid(Enemy) &amp;&amp; !Enemy->IsDead())
+        {
+            ++Count;
+        }
+    }
+
+    UE_LOG(LogTemp, Log, TEXT("Live enemies: %d"), Count);
+}</code></pre>
+
+                <h3>UGameplayStatics — the convenient way</h3>
+                <pre><code class="language-cpp">#include "Kismet/GameplayStatics.h"
+
+TArray&lt;AActor*&gt; FoundEnemies;
+UGameplayStatics::GetAllActorsOfClass(GetWorld(), AEnemy::StaticClass(), FoundEnemies);
+// FoundEnemies now holds every AEnemy — but note the AActor* type, so Cast to use specifics.</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Iteration is not free — don't do it every frame</h4>
+                    <p>Both approaches walk actors in the world; on a large level that's real cost. <strong>Never call <code>GetAllActorsOfClass</code> or a full actor iterator inside <code>Tick</code>.</strong> Cache results, or better, have actors <em>register themselves</em> with a manager or subsystem on <code>BeginPlay</code> (Module 7) so you keep a ready list instead of searching. <code>TActorIterator</code> is generally faster than <code>GetAllActorsOfClass</code> for one-off scans.</p>
+                </div>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: A wave spawner</h3>
+                    <p><strong>Objective:</strong> Combine spawning, <code>TSubclassOf</code>, and iteration.</p>
+                    <p>Write <code>AWaveSpawner : public AActor</code> that: exposes <code>TSubclassOf&lt;AEnemy&gt; EnemyClass</code> and <code>int32 EnemiesPerWave</code>; has <code>SpawnWave()</code> that spawns that many enemies around itself (null-check each); and has <code>int32 GetLiveEnemyCount() const</code> using <code>TActorIterator</code>. Bonus: make spawned projectiles/enemies self-destruct with <code>SetLifeSpan</code> if they wander (skip if not applicable).</p>
+
+                    <details>
+                        <summary>💡 Hint — SpawnWave loop</summary>
+                        <pre><code class="language-cpp">for (int32 i = 0; i &lt; EnemiesPerWave; ++i)
+{
+    const FVector Loc = GetActorLocation() + FVector(i * 150.f, 0.f, 0.f);
+    AEnemy* E = GetWorld()->SpawnActor&lt;AEnemy&gt;(EnemyClass, Loc, GetActorRotation());
+    if (!E) { UE_LOG(LogTemp, Warning, TEXT("Spawn %d failed"), i); }
+}</code></pre>
+                    </details>
+
+                    <details>
+                        <summary>✅ Design note</summary>
+                        <p>For a real game, having each enemy register with the spawner on <code>BeginPlay</code> and unregister on <code>EndPlay</code> beats iterating every time you need a count — that's the pattern Module 7's subsystems formalize. Iteration is fine for occasional queries.</p>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> What does <code>SpawnActor</code> return if placement fails?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — it returns nullptr; always check.">A) <code>nullptr</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="It doesn't throw.">B) It throws an exception</button>
+                            <button class="quiz-option" data-correct="false" data-hint="It won't force one through by default.">C) A default actor at the origin</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> You must set a projectile's damage <em>before</em> its <code>BeginPlay</code>. Use:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="BeginPlay already ran — too late.">A) <code>SpawnActor</code>, then set damage</button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — SpawnActorDeferred lets you configure before FinishSpawning runs BeginPlay.">B) <code>SpawnActorDeferred</code>, set damage, then <code>FinishSpawning</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="Constructors can't take spawn-time gameplay data.">C) Pass damage to the constructor</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> What's the problem with calling <code>GetAllActorsOfClass</code> every <code>Tick</code>?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — it scans all actors and is expensive per-frame; cache or use registration.">A) It scans the world each time — expensive per frame</button>
+                            <button class="quiz-option" data-correct="false" data-hint="It works, it's just slow.">B) It doesn't compile in Tick</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Results are current, not stale.">C) It always returns stale data</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li>Expose <strong><code>TSubclassOf&lt;T&gt;</code></strong> to let designers choose what to spawn safely.</li>
+                        <li><code>GetWorld()->SpawnActor&lt;T&gt;(Class, Location, Rotation, Params)</code> spawns at runtime — <strong>always null-check</strong> the result.</li>
+                        <li>Use <strong><code>SpawnActorDeferred</code> → set properties → <code>FinishSpawning</code></strong> when <code>BeginPlay</code> needs spawn-time data.</li>
+                        <li><code>Destroy()</code> removes an actor (never <code>delete</code>); it's deferred, so guard held pointers with <code>IsValid()</code>. <code>SetLifeSpan</code> auto-destroys.</li>
+                        <li>Find actors with <code>TActorIterator</code> or <code>GetAllActorsOfClass</code> — but <strong>never every frame</strong>; cache or use registration.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/spawning-actors-in-unreal-engine" target="_blank" rel="noopener">Spawning Actors (Epic)</a></li>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/EngineUtils/TActorIterator" target="_blank" rel="noopener">TActorIterator API (Epic)</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p>Actors can now appear, act, and vanish. The last piece of the framework module is making them <em>talk</em> to each other — <strong>actor communication patterns</strong>: direct references, casting, and the interfaces and delegates that keep it clean.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Lesson complete!</h3>
+                    <p>The world is dynamic now. Let's get its inhabitants talking.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m03_l03_custom_components.html" class="prev-lesson">← Previous: Custom Actor &amp; Scene Components</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m03_l05_actor_communication.html" class="next-lesson">Next: Actor Communication Patterns →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

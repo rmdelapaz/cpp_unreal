@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Async and multithreading in Unreal Engine 5.8 C++: the game thread, thread safety with UObjects, AsyncTask, the Tasks system, ParallelFor, and returning to the game thread.">
+    <meta name="author" content="Ray de la Paz">
+    <title>Async &amp; Multithreading — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 11</a></li>
+            <li aria-current="page">Lesson 11.1: Async &amp; Multithreading</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>🧵 Lesson 11.1: Async &amp; Multithreading</h1>
+                <p class="lead">Almost all your gameplay code runs on one thread — the game thread — and blocking it drops your frame rate. When you have heavy, self-contained work (pathfinding, procedural generation, big data crunching), moving it off the game thread keeps the game smooth. But threading in Unreal has firm rules, and breaking them crashes spectacularly.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Explain the game thread and why blocking it hurts</li>
+                        <li>State the cardinal rule: don't touch UObjects off the game thread</li>
+                        <li>Run background work with <code>AsyncTask</code> and the Tasks system</li>
+                        <li>Return safely to the game thread to apply results</li>
+                        <li>Parallelize a loop with <code>ParallelFor</code></li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 60 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#gamethread" class="toc-link">The Game Thread</a></li>
+                        <li><a href="#cardinalrule" class="toc-link">The Cardinal Rule</a></li>
+                        <li><a href="#asynctask" class="toc-link">AsyncTask &amp; the Tasks System</a></li>
+                        <li><a href="#returning" class="toc-link">Returning to the Game Thread</a></li>
+                        <li><a href="#parallelfor" class="toc-link">ParallelFor</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="gamethread" class="lesson-section">
+                <h2>The Game Thread</h2>
+                <p>Nearly everything you've written in this course — <code>Tick</code>, <code>BeginPlay</code>, overlaps, RPCs, timers — runs on the <strong>game thread</strong>. It processes one frame at a time: input, gameplay, then hands off to the render thread. If your code takes 20&nbsp;ms on the game thread, that's a frame that took at least 20&nbsp;ms — visible stutter.</p>
+
+                <div class="mermaid">
+                    graph LR
+                        Frame["One frame on the game thread"] --> I["Input"]
+                        I --> G["Gameplay: Tick, events, logic"]
+                        G --> H["Hand to render thread"]
+                        H --> Frame
+                        Block["A slow operation here..."] --> G
+                        Block --> Stall["...stalls the whole frame"]
+                </div>
+                <figure>
+                    <figcaption>Figure 1: The game thread runs a frame's worth of gameplay in sequence. Any slow operation on it delays the entire frame — the source of hitches.</figcaption>
+                </figure>
+
+                <div class="card card-accent">
+                    <h4>📖 When to reach for a thread</h4>
+                    <p>Threading is <strong>not</strong> a default — most gameplay belongs on the game thread. Move work off it only when it's <em>heavy, self-contained, and not needed this exact frame</em>: pathfinding for many agents, procedural mesh generation, parsing a large file, expensive analysis. If the work is small or must affect this frame, keep it on the game thread. Premature threading adds complexity and bugs for no gain.</p>
+                </div>
+            </section>
+
+            <section id="cardinalrule" class="lesson-section">
+                <h2>The Cardinal Rule</h2>
+                <p>One rule dwarfs all others in Unreal threading:</p>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Do NOT touch UObjects (actors, components) off the game thread</h4>
+                    <p>The engine's object system, garbage collector, and most of the API are <strong>not thread-safe</strong>. Reading or writing an actor, spawning, destroying, or calling most engine functions from a background thread causes race conditions and crashes — often intermittent ones that are agony to debug. Background threads should work with <strong>plain data</strong> (numbers, arrays, non-UObject structs), then hand results back to the game thread to apply.</p>
+                </div>
+
+                <div class="mermaid">
+                    graph LR
+                        GT["Game thread<br/>owns UObjects"] -->|"copy plain DATA"| BG["Background thread<br/>crunches data only"]
+                        BG -->|"send RESULT back"| GT2["Game thread<br/>applies result to UObjects"]
+                </div>
+                <figure>
+                    <figcaption>Figure 2: The safe shape. Copy plain data out, compute on the background thread, marshal the result back, and only <em>then</em> touch UObjects — always on the game thread.</figcaption>
+                </figure>
+
+                <div class="card card-accent">
+                    <h4>📖 Why plain data?</h4>
+                    <p>An <code>FVector</code>, a <code>TArray&lt;float&gt;</code>, a non-UObject struct — these you can safely process on any thread as long as no other thread touches the same instance concurrently. A <code>UObject*</code>, though, might be garbage-collected or modified by the game thread at any moment. This is where the two-memory-worlds distinction from Lesson 2.5 pays off again: UObjects have engine-managed lifetime and rules; plain data is yours to move.</p>
+                </div>
+            </section>
+
+            <section id="asynctask" class="lesson-section">
+                <h2>AsyncTask &amp; the Tasks System</h2>
+                <p>The simplest way to run work off the game thread is <code>AsyncTask</code> — hand it a lambda and a thread pool to run on.</p>
+
+                <pre><code class="language-cpp">#include "Async/Async.h"
+
+void AWorldGenerator::StartGeneration()
+{
+    // Copy any input we need as PLAIN DATA before going async.
+    const int32 Seed = GenerationSeed;
+
+    // Run heavy work on a background thread pool.
+    AsyncTask(ENamedThreads::AnyBackgroundThreadNormalTask, [this, Seed]()
+    {
+        // BACKGROUND THREAD: only plain-data work here. No UObject access!
+        TArray&lt;FVector&gt; Points = ComputeHeightfield(Seed);   // pure computation
+
+        // Marshal the result back to the game thread to apply it (next section).
+        AsyncTask(ENamedThreads::GameThread, [this, Points]()
+        {
+            // GAME THREAD: now it's safe to touch actors/components.
+            BuildMeshFromPoints(Points);
+        });
+    });
+}</code></pre>
+
+                <p>Modern UE also has the <strong>Tasks system</strong> (<code>UE::Tasks</code>) with dependencies and results — a cleaner API for structured async work:</p>
+
+                <pre><code class="language-cpp">#include "Tasks/Task.h"
+
+UE::Tasks::TTask&lt;int32&gt; Task = UE::Tasks::Launch(UE_SOURCE_LOCATION, []()
+{
+    return ExpensiveComputation();   // returns a value, off the game thread
+});
+// Later: Task.GetResult() (blocks if not ready) or chain another task on it.</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ Capture plain data, not UObjects, in the lambda</h4>
+                    <p>Notice the background lambda captures <code>Seed</code> (an int) — not live actor state. Capturing <code>this</code> is common for scheduling the return, but you must <em>not dereference UObjects on the background thread</em>. If the object could be destroyed before the task finishes, capture a <code>TWeakObjectPtr</code> (Lesson 2.5) and validate it back on the game thread before use.</p>
+                </div>
+            </section>
+
+            <section id="returning" class="lesson-section">
+                <h2>Returning to the Game Thread</h2>
+                <p>The pattern above shows the key move: after background work, schedule an <code>AsyncTask(ENamedThreads::GameThread, ...)</code> to apply results. This "hop back" is mandatory — it's the only place you may touch UObjects again.</p>
+
+                <div class="card card-accent">
+                    <h4>📖 The full round trip</h4>
+                    <ol>
+                        <li><strong>Game thread:</strong> gather inputs as plain data.</li>
+                        <li><strong>Background thread:</strong> do the heavy computation on that data only.</li>
+                        <li><strong>Game thread (hop back):</strong> apply the result to actors/components — spawn, update, whatever.</li>
+                    </ol>
+                    <p>This is exactly how the engine's own async systems work (async asset loading, async saves from Lesson 7.3, async traces). You're following a well-worn path, not inventing one.</p>
+                </div>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Beware the object dying mid-task</h4>
+                    <p>Between launching a task and its completion, the owning actor could be destroyed (level change, gameplay). On the game-thread hop-back, re-check validity — <code>if (!IsValid(this)) return;</code> or resolve a <code>TWeakObjectPtr</code> — before applying results. A task that blindly writes to a freed actor crashes. Symmetric to every lifetime check you've done since Module 2.</p>
+                </div>
+            </section>
+
+            <section id="parallelfor" class="lesson-section">
+                <h2>ParallelFor</h2>
+                <p>Sometimes you don't need a separate long-running thread — you have a big loop of independent work you want spread across cores <em>now</em>. <code>ParallelFor</code> runs loop iterations in parallel and returns when all are done.</p>
+
+                <pre><code class="language-cpp">#include "Async/ParallelFor.h"
+
+// Process a big array of plain data across all available cores.
+TArray&lt;float&gt; Results;
+Results.SetNum(Inputs.Num());
+
+ParallelFor(Inputs.Num(), [&amp;](int32 Index)
+{
+    // Runs on multiple threads. Each iteration touches ONLY its own index —
+    // no shared writes, no UObjects. That independence is what makes it safe.
+    Results[Index] = ExpensiveTransform(Inputs[Index]);
+});
+// Here, all iterations are complete — safe to use Results.</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Iterations must be independent</h4>
+                    <p><code>ParallelFor</code> is safe only when each iteration works on <em>separate</em> data — like writing to its own <code>Results[Index]</code>. If two iterations write the same variable (a shared counter, a shared container's <code>Add</code>), you get a data race. And still no UObject access inside. Used correctly on independent plain-data work, <code>ParallelFor</code> is a near-free speedup on multi-core machines.</p>
+                </div>
+
+                <blockquote>
+                    <strong>💡 Measure before you thread.</strong> Threading adds complexity and risk. The next lesson is about profiling — always confirm a piece of code is <em>actually</em> a bottleneck (and worth the threading complexity) before parallelizing it. Optimizing code that wasn't slow is wasted effort and new bugs.</blockquote>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: Offload a heavy calculation</h3>
+                    <p><strong>Objective:</strong> Structure an async job correctly.</p>
+                    <ol>
+                        <li>You need to compute influence-map values for a 256×256 grid (pure math) and then spawn markers at high-value cells.</li>
+                        <li>Sketch the three-step flow: what runs on the game thread, what on a background thread, and where the hop-back happens.</li>
+                        <li>Which step is allowed to spawn the marker actors, and why not the others?</li>
+                        <li>How would you guard against the owning manager being destroyed before the job finishes?</li>
+                    </ol>
+
+                    <details>
+                        <summary>✅ Answers</summary>
+                        <ul>
+                            <li>Game thread: read inputs as plain data. Background: compute the 256×256 grid (plain arrays). Game-thread hop-back: spawn markers.</li>
+                            <li>Only the <strong>game-thread hop-back</strong> may spawn — spawning is UObject/engine work and is not thread-safe (the cardinal rule).</li>
+                            <li>Capture a <code>TWeakObjectPtr</code> to the manager (or check <code>IsValid(this)</code>) on the hop-back before spawning.</li>
+                        </ul>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> The cardinal rule of Unreal threading is:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — UObjects/engine API aren't thread-safe; touch them only on the game thread.">A) Don't access UObjects/actors off the game thread</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Threads are the exception, not the default.">B) Always run gameplay on background threads</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Not a real rule.">C) Never use more than two threads</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> After computing on a background thread, to apply results to actors you must:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — hop back to the game thread before touching UObjects.">A) Schedule an <code>AsyncTask(ENamedThreads::GameThread, ...)</code> and apply there</button>
+                            <button class="quiz-option" data-correct="false" data-hint="That violates the cardinal rule.">B) Modify the actors directly from the background thread</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Results still need the game thread to be applied.">C) Nothing — results apply automatically</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> <code>ParallelFor</code> is safe when:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — independent iterations on separate data, no UObjects.">A) Each iteration works on independent data with no shared writes or UObjects</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Shared writes cause data races.">B) All iterations increment one shared counter</button>
+                            <button class="quiz-option" data-correct="false" data-hint="No UObject access inside.">C) Each iteration spawns an actor</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li>Gameplay runs on the <strong>game thread</strong>; slow work there stalls the frame. Offload only <strong>heavy, self-contained, not-this-frame</strong> work.</li>
+                        <li><strong>Cardinal rule:</strong> never touch UObjects/actors/most engine API off the game thread — background threads work with <strong>plain data</strong> only.</li>
+                        <li>Run background work with <code>AsyncTask</code> or the <code>UE::Tasks</code> system; capture plain data (or <code>TWeakObjectPtr</code>), not live UObject state.</li>
+                        <li><strong>Hop back</strong> to the game thread (<code>AsyncTask(ENamedThreads::GameThread, ...)</code>) to apply results — and re-check validity, since the owner may have died.</li>
+                        <li><code>ParallelFor</code> speeds up big loops of <strong>independent</strong> plain-data work; <strong>measure first</strong> — don't thread what isn't slow.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/tasks-systems-in-unreal-engine" target="_blank" rel="noopener">Tasks System (Epic)</a></li>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/threads-in-unreal-engine" target="_blank" rel="noopener">Threading &amp; Async (Epic)</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p>We keep saying "measure first." The final foundation lesson makes that concrete: <strong>profiling with Unreal Insights</strong>, the <code>stat</code> commands, and the optimization patterns that actually move the needle — so you fix real bottlenecks, not imagined ones.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Lesson complete!</h3>
+                    <p>You can move work off the game thread safely. Now let's learn what to move.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m10_l04_networked_feature_walkthrough.html" class="prev-lesson">← Previous: Replicating a Gameplay Feature</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m11_l02_profiling_and_optimization.html" class="next-lesson">Next: Profiling with Unreal Insights &amp; Optimization →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

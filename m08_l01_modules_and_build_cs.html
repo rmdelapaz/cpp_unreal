@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Unreal Engine 5.8 modules in depth: Public/Private layout, Build.cs dependencies and settings, Target.cs, module loading phases, and IModuleInterface.">
+    <meta name="author" content="Ray de la Paz">
+    <title>Modules in Depth — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 8</a></li>
+            <li aria-current="page">Lesson 8.1: Modules in Depth</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>🏗️ Lesson 8.1: Modules in Depth — Build.cs &amp; Target.cs</h1>
+                <p class="lead">Back in Lesson 2.1 you met modules as the unit of compilation. Now we go deeper: the Public/Private layout that enforces encapsulation, everything a <code>.Build.cs</code> controls, build targets, loading phases, and the startup hooks that let a module run code when it loads.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Organize a module into Public and Private folders and explain the effect</li>
+                        <li>Read and edit the main <code>.Build.cs</code> settings beyond dependencies</li>
+                        <li>Describe what a <code>.Target.cs</code> configures and the common build configurations</li>
+                        <li>Create a second module and give it startup/shutdown code via <code>IModuleInterface</code></li>
+                        <li>Explain module loading phases and the <code>_API</code> export macro</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 60 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#layout" class="toc-link">Public vs Private</a></li>
+                        <li><a href="#buildcs" class="toc-link">The Full Build.cs</a></li>
+                        <li><a href="#targetcs" class="toc-link">Target.cs &amp; Configurations</a></li>
+                        <li><a href="#second" class="toc-link">A Second Module</a></li>
+                        <li><a href="#phases" class="toc-link">Loading Phases &amp; Startup</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="layout" class="lesson-section">
+                <h2>Public vs Private</h2>
+                <p>A module can split its code into <code>Public/</code> and <code>Private/</code> folders. This isn't cosmetic — it controls what <em>other</em> modules can include.</p>
+
+                <pre><code class="language-text">Source/MyModule/
+├── MyModule.Build.cs
+├── Public/                 # headers other modules CAN include
+│   └── MyPublicClass.h
+└── Private/                # headers only THIS module can include
+    ├── MyPublicClass.cpp
+    └── MyInternalHelper.h  # implementation detail, hidden from others</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 Public = your module's API</h4>
+                    <p>Headers in <code>Public/</code> form your module's <strong>interface</strong> — other modules that depend on yours can include them. Headers in <code>Private/</code> are implementation details, invisible outside. This is encapsulation at the module level: expose a clean surface, hide the internals. The default project layout is simpler (files directly under the module folder), but the Public/Private split matters as a project grows and especially for plugins (Lesson 8.3).</p>
+                </div>
+            </section>
+
+            <section id="buildcs" class="lesson-section">
+                <h2>The Full Build.cs</h2>
+                <p>Lesson 2.1 covered dependency lists. A <code>.Build.cs</code> controls much more — it's C# that runs at build time:</p>
+
+                <pre><code class="language-csharp">public class MyModule : ModuleRules
+{
+    public MyModule(ReadOnlyTargetRules Target) : base(Target)
+    {
+        PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+
+        // Public: dependencies exposed through THIS module's public headers.
+        PublicDependencyModuleNames.AddRange(new string[]
+        { "Core", "CoreUObject", "Engine" });
+
+        // Private: dependencies used only in .cpp files.
+        PrivateDependencyModuleNames.AddRange(new string[]
+        { "Slate", "SlateCore" });
+
+        // Extra include paths (e.g. for third-party headers — Lesson 8.2).
+        PublicIncludePaths.AddRange(new string[] { /* ... */ });
+
+        // Toggle IWYU-friendly builds, unity builds, optimization, etc.
+        bUseUnity = true;                    // combine cpp files for faster builds
+        // OptimizeCode = CodeOptimization.InShippingBuildsOnly;
+    }
+}</code></pre>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Setting</th><th>Controls</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>Public/PrivateDependencyModuleNames</code></td><td>Which modules you link against (Lesson 2.1)</td></tr>
+                            <tr><td><code>Public/PrivateIncludePaths</code></td><td>Extra header search directories</td></tr>
+                            <tr><td><code>PublicAdditionalLibraries</code></td><td>External libs to link (Lesson 8.2)</td></tr>
+                            <tr><td><code>PCHUsage</code></td><td>Precompiled-header strategy (build speed)</td></tr>
+                            <tr><td><code>bUseUnity</code></td><td>Unity builds — combine files to compile faster</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card card-warning">
+                    <h4>⚠️ It's C#, and it runs at build time</h4>
+                    <p>Remember from Lesson 2.1: <code>.Build.cs</code> is <strong>C#</strong>, not C++, evaluated by UnrealBuildTool. You can branch on <code>Target.Platform</code>, <code>Target.Configuration</code>, etc., to add platform-specific dependencies. Edit it and <strong>regenerate project files</strong> for the change to take effect.</p>
+                </div>
+            </section>
+
+            <section id="targetcs" class="lesson-section">
+                <h2>Target.cs &amp; Configurations</h2>
+                <p>A <code>.Target.cs</code> configures a whole build output (Lesson 2.1: game vs editor). It also chooses which modules to include and default settings for the target.</p>
+
+                <pre><code class="language-csharp">// MyProject.Target.cs — the game target
+public class MyProjectTarget : TargetRules
+{
+    public MyProjectTarget(TargetInfo Target) : base(Target)
+    {
+        Type = TargetType.Game;
+        DefaultBuildSettings = BuildSettingsVersion.Latest;
+        IncludeOrderVersion = EngineIncludeOrderVersion.Latest;
+
+        // The modules this target builds:
+        ExtraModuleNames.AddRange(new string[] { "MyProject", "MyGameplayModule" });
+    }
+}</code></pre>
+
+                <p>Orthogonal to the target <em>type</em> is the build <strong>configuration</strong> — the optimization/debug level you compile:</p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Configuration</th><th>Use for</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><strong>Debug / DebugGame</strong></td><td>Full debugging, no optimization — stepping through code</td></tr>
+                            <tr><td><strong>Development</strong></td><td>Everyday work — optimized but with logging/asserts (the default)</td></tr>
+                            <tr><td><strong>Shipping</strong></td><td>Final builds — fully optimized, logging/asserts stripped</td></tr>
+                            <tr><td><strong>Test</strong></td><td>Shipping-like but keeps some tooling</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card card-success">
+                    <h4>✅ Why configurations matter for your code</h4>
+                    <p>Recall Lesson 2.6: <code>check</code> is compiled out in Shipping, <code>UE_LOG</code> verbosity changes, and <code>#if WITH_EDITOR</code> code (Lesson 6.2) is stripped. The configuration you build decides which of your debug scaffolding survives. Develop in <strong>Development</strong>, verify in <strong>Shipping</strong> before release so you catch anything that depended on editor-only or debug-only code.</p>
+                </div>
+            </section>
+
+            <section id="second" class="lesson-section">
+                <h2>A Second Module</h2>
+                <p>As a project grows, splitting code into multiple modules speeds up builds (only changed modules recompile) and enforces boundaries. To add one, create the folder + files and register it in the <code>.uproject</code>.</p>
+
+                <pre><code class="language-cpp">// MyGameplayModule.cpp — every module needs an implementation + IMPLEMENT_MODULE.
+#include "Modules/ModuleManager.h"
+
+// A minimal module. Use IMPLEMENT_GAME_MODULE for a gameplay module,
+// or a custom IModuleInterface (below) if you need startup code.
+IMPLEMENT_MODULE(FDefaultModuleImpl, MyGameplayModule);</code></pre>
+
+                <pre><code class="language-json">// In MyProject.uproject — declare the new module:
+"Modules": [
+    { "Name": "MyProject",         "Type": "Runtime", "LoadingPhase": "Default" },
+    { "Name": "MyGameplayModule",  "Type": "Runtime", "LoadingPhase": "Default" }
+]</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 Module types</h4>
+                    <p>The <code>Type</code> in the descriptor controls where a module is available: <strong>Runtime</strong> (game + editor), <strong>Editor</strong> (editor only — tools), <strong>Developer</strong>, <strong>UncookedOnly</strong>, etc. An editor-only module is where editor tooling lives so it never ships in the packaged game — the same separation as the game vs editor targets.</p>
+                </div>
+            </section>
+
+            <section id="phases" class="lesson-section">
+                <h2>Loading Phases &amp; Startup</h2>
+                <p>Modules load at a <strong>loading phase</strong> during engine startup — <code>Default</code> is typical, but some modules must load earlier (before the engine is fully up) or later. And a module can run code when it loads by implementing <code>IModuleInterface</code>.</p>
+
+                <pre><code class="language-cpp">// MyGameplayModule.cpp — a module with startup/shutdown hooks.
+#include "Modules/ModuleManager.h"
+
+class FMyGameplayModule : public IModuleInterface
+{
+public:
+    virtual void StartupModule() override
+    {
+        // Runs when the module loads — register things, load assets, etc.
+        UE_LOG(LogTemp, Log, TEXT("MyGameplayModule started"));
+    }
+
+    virtual void ShutdownModule() override
+    {
+        // Runs when the module unloads — clean up what StartupModule did.
+        UE_LOG(LogTemp, Log, TEXT("MyGameplayModule shut down"));
+    }
+};
+
+IMPLEMENT_MODULE(FMyGameplayModule, MyGameplayModule);</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ StartupModule is early — very early</h4>
+                    <p><code>StartupModule</code> runs during engine init, before any world exists — so the same rule as an actor constructor (Lesson 3.2): no world, no actors, no gameplay here. It's for engine-level registration (custom asset types, gameplay tags, editor extensions). For per-session game logic, a <strong>subsystem</strong> (Lesson 7.4) is almost always the better home than module startup.</p>
+                </div>
+
+                <blockquote>
+                    <strong>💡 The _API macro connects back:</strong> the <code>MYPROJECT_API</code> macro you've seen on every <code>UCLASS</code> (since Lesson 1.5) is the module's <strong>export macro</strong> — it marks a class as visible to <em>other</em> modules that depend on yours. UHT defines one per module (<code>&lt;MODULENAME&gt;_API</code>). A class without it is usable only within its own module. Now you know why it was always there.</blockquote>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: Plan a module split</h3>
+                    <p><strong>Objective:</strong> Apply module concepts to architecture.</p>
+                    <ol>
+                        <li>Your project has grown: core gameplay, an editor tool for level designers, and a shared math/utility library. Propose a module for each and its <code>Type</code>.</li>
+                        <li>Which module's classes need the <code>_API</code> macro so the others can use them?</li>
+                        <li>Where would code that registers a custom asset type at startup go — a subsystem or module <code>StartupModule</code>? Why?</li>
+                    </ol>
+
+                    <details>
+                        <summary>✅ Answers</summary>
+                        <ul>
+                            <li>Core gameplay → <strong>Runtime</strong>; editor tool → <strong>Editor</strong> (never ships); math/utility → <strong>Runtime</strong> (shared).</li>
+                            <li>The shared utility module (and any runtime module others depend on) needs <code>_API</code> on classes exposed across modules; purely-internal classes don't.</li>
+                            <li>Registering a custom asset type is engine-level and must happen at startup before content loads → <strong>module <code>StartupModule</code></strong>. Per-session game state → subsystem.</li>
+                        </ul>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> Headers other modules may include belong in which folder?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — Public/ headers form the module's API.">A) <code>Public/</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="Private is hidden from other modules.">B) <code>Private/</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="Generated build output.">C) <code>Intermediate/</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> Which build configuration strips <code>check</code> and most logging for release?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="That's the everyday dev build.">A) Development</button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — Shipping strips debug scaffolding for release.">B) Shipping</button>
+                            <button class="quiz-option" data-correct="false" data-hint="That's full debug.">C) Debug</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> What is the <code>MYPROJECT_API</code> macro on a <code>UCLASS</code>?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — it's the module's export macro making the class visible to other modules.">A) The module's export macro — makes the class usable by other modules</button>
+                            <button class="quiz-option" data-correct="false" data-hint="It's not about networking.">B) A replication flag</button>
+                            <button class="quiz-option" data-correct="false" data-hint="It's not editor-only.">C) An editor-only marker</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li>A module's <strong><code>Public/</code></strong> headers are its API; <strong><code>Private/</code></strong> headers are hidden internals — encapsulation at module scale.</li>
+                        <li><code>.Build.cs</code> (C#) controls dependencies, include paths, external libs, PCH, and unity builds; <code>.Target.cs</code> configures the whole build (type + included modules).</li>
+                        <li>Build <strong>configurations</strong> (Debug/Development/Shipping) decide what debug scaffolding survives — verify in Shipping before release.</li>
+                        <li>Extra modules speed builds and enforce boundaries; each needs <code>IMPLEMENT_MODULE</code> and a <code>.uproject</code> entry with a <code>Type</code> and <code>LoadingPhase</code>.</li>
+                        <li><code>IModuleInterface::StartupModule</code> runs early (no world) for engine registration; the <code>_API</code> macro is the module export marker you've seen all along.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-engine-modules" target="_blank" rel="noopener">Unreal Engine Modules (Epic)</a></li>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/build-configurations-reference-guide-for-unreal-engine" target="_blank" rel="noopener">Build Configurations Reference (Epic)</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p>Modules organize <em>your</em> code. Next: bringing in <em>other people's</em> code — <strong>integrating third-party C++ libraries</strong> through the build system, the thing Blueprint simply cannot do.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Lesson complete!</h3>
+                    <p>You command the build. Now let's link in external code.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m07_l04_subsystems.html" class="prev-lesson">← Previous: Subsystems — The Modern Singleton</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m08_l02_third_party_libraries.html" class="next-lesson">Next: Integrating Third-Party Libraries →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

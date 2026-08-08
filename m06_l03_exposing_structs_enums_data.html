@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Exposing USTRUCTs, UENUMs, and data types to Blueprint in Unreal Engine 5.8: BlueprintType, struct pins, enum dropdowns, TSubclassOf, and reflection-friendly data across the boundary.">
+    <meta name="author" content="Ray de la Paz">
+    <title>Exposing Structs, Enums &amp; Data — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 6</a></li>
+            <li aria-current="page">Lesson 6.3: Exposing Structs, Enums &amp; Data</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>📦 Lesson 6.3: Exposing Structs, Enums &amp; Data</h1>
+                <p class="lead">Primitives cross the boundary easily, but real gameplay data comes in bundles — a damage event, a stat block, a weapon config. Making your <code>USTRUCT</code>s and <code>UENUM</code>s first-class Blueprint types lets you pass rich, self-documenting data between C++ and Blueprint cleanly.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Make a <code>USTRUCT</code> a Blueprint type with usable pins</li>
+                        <li>Make a <code>UENUM</code> a Blueprint dropdown with friendly names</li>
+                        <li>Pass structs and enums as function parameters and return values</li>
+                        <li>Expose <code>TSubclassOf</code> class-picker properties to Blueprint</li>
+                        <li>Recognize which types can and cannot cross the boundary</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 60 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#blueprinttype" class="toc-link">BlueprintType Structs</a></li>
+                        <li><a href="#enums" class="toc-link">BlueprintType Enums</a></li>
+                        <li><a href="#passing" class="toc-link">Passing Data Across</a></li>
+                        <li><a href="#subclassof" class="toc-link">TSubclassOf Pickers</a></li>
+                        <li><a href="#whatcrosses" class="toc-link">What Can Cross</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="blueprinttype" class="lesson-section">
+                <h2>BlueprintType Structs</h2>
+                <p>You declared <code>USTRUCT</code>s in Lesson 2.2. Adding <code>BlueprintType</code> and marking members with Blueprint access turns a struct into a type Blueprint fully understands — you can make variables of it, pass it on pins, and break/make it in graphs.</p>
+
+                <pre><code class="language-cpp">USTRUCT(BlueprintType)   // ← makes it usable as a Blueprint type
+struct FWeaponStats
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weapon")
+    float Damage = 25.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weapon")
+    float FireRate = 5.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weapon")
+    int32 MagazineSize = 30;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weapon")
+    FName WeaponName = TEXT("Rifle");
+};</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 Two levels of exposure</h4>
+                    <p><code>BlueprintType</code> on the <code>USTRUCT</code> makes the <em>struct</em> usable in Blueprint; <code>BlueprintReadWrite</code> on each member makes those <em>fields</em> accessible in a "Break/Make Struct" node. Omit member specifiers and Blueprint sees the struct type but can't read its fields — usually not what you want. A fully-exposed struct shows up as neat, named pins.</p>
+                </div>
+
+                <div class="card card-success">
+                    <h4>✅ Structs bundle related data</h4>
+                    <p>Instead of a function with eight loose float parameters, pass one <code>FWeaponStats</code>. It's self-documenting, easy to extend (add a field without changing signatures), and reads cleanly on both sides of the boundary. This is the same "bundle of data" role from Lesson 2.2 — now Blueprint-visible.</p>
+                </div>
+            </section>
+
+            <section id="enums" class="lesson-section">
+                <h2>BlueprintType Enums</h2>
+                <p>A <code>UENUM(BlueprintType)</code> becomes a dropdown in the editor and a typed pin in Blueprint. It must use <code>enum class ... : uint8</code>, and <code>UMETA(DisplayName)</code> controls the friendly labels.</p>
+
+                <pre><code class="language-cpp">UENUM(BlueprintType)
+enum class EWeaponType : uint8
+{
+    Pistol   UMETA(DisplayName = "Pistol"),
+    Rifle    UMETA(DisplayName = "Assault Rifle"),
+    Shotgun  UMETA(DisplayName = "Shotgun"),
+    Sniper   UMETA(DisplayName = "Sniper Rifle")
+};</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ The <code>: uint8</code> is mandatory for BlueprintType</h4>
+                    <p>Blueprint-exposed enums <em>must</em> have a <code>uint8</code> underlying type — <code>enum class EWeaponType : uint8</code>. Without it, UHT rejects the <code>BlueprintType</code> enum. Also prefer scoped <code>enum class</code> over old-style <code>enum</code> to avoid name collisions (you write <code>EWeaponType::Rifle</code>, not a bare <code>Rifle</code>).</p>
+                </div>
+
+                <p>Now an enum property gives designers a clean dropdown:</p>
+
+                <pre><code class="language-cpp">UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weapon")
+EWeaponType Type = EWeaponType::Rifle;   // shows as a dropdown of display names</code></pre>
+            </section>
+
+            <section id="passing" class="lesson-section">
+                <h2>Passing Data Across</h2>
+                <p>With both marked <code>BlueprintType</code>, they flow through <code>UFUNCTION</code>s as parameters and return values — full rich data crossing the boundary.</p>
+
+                <pre><code class="language-cpp">// Return a struct to Blueprint (BlueprintPure getter):
+UFUNCTION(BlueprintPure, Category = "Weapon")
+FWeaponStats GetStats() const { return Stats; }
+
+// Take a struct and an enum as parameters from Blueprint:
+UFUNCTION(BlueprintCallable, Category = "Weapon")
+void Configure(const FWeaponStats&amp; NewStats, EWeaponType NewType);
+
+// Return an array of structs — Blueprint gets a proper array of struct pins:
+UFUNCTION(BlueprintCallable, Category = "Weapon")
+TArray&lt;FWeaponStats&gt; GetAllVariants() const;</code></pre>
+
+                <div class="mermaid">
+                    graph LR
+                        BP["Blueprint graph"] -->|"Configure(FWeaponStats, EWeaponType)"| CPP["C++ mechanics"]
+                        CPP -->|"GetStats() returns FWeaponStats"| BP
+                </div>
+                <figure>
+                    <figcaption>Figure 1: Rich data flowing both ways. Because the struct and enum are <code>BlueprintType</code>, Blueprint draws proper pins for them — no primitive-by-primitive plumbing.</figcaption>
+                </figure>
+
+                <div class="card card-success">
+                    <h4>✅ Const-ref for struct params</h4>
+                    <p>Note <code>const FWeaponStats&amp;</code> for the parameter — the same efficient const-reference pass from Lesson 1.4. Blueprint handles the reference transparently; on the C++ side you avoid copying the whole struct. It's the idiomatic way to accept a struct across the boundary.</p>
+                </div>
+            </section>
+
+            <section id="subclassof" class="lesson-section">
+                <h2>TSubclassOf Pickers</h2>
+                <p>You met <code>TSubclassOf</code> for spawning in Lesson 3.4. As a <code>UPROPERTY</code>, it gives designers a filtered class picker in the editor and a class pin in Blueprint — the standard way to make "what to spawn / which type" data-driven.</p>
+
+                <pre><code class="language-cpp">// Designer picks BP_Rifle, BP_Shotgun... restricted to AWeaponBase subclasses.
+UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Loadout")
+TSubclassOf&lt;AWeaponBase&gt; StartingWeaponClass;
+
+// A whole configurable list:
+UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Loadout")
+TArray&lt;TSubclassOf&lt;AWeaponBase&gt;&gt; UnlockableWeapons;</code></pre>
+
+                <blockquote>
+                    <strong>💡 The pattern crystallizing:</strong> a C++ system that takes <code>TSubclassOf</code> class references, <code>FWeaponStats</code> config structs, and <code>EWeaponType</code> enums — all set by designers in the editor — is the essence of data-driven design. The C++ provides the machinery; the data lives in Blueprint assets and the inspector. This is precisely what Lesson 6.4 assembles into the full base-class pattern, and what Module 7 formalizes with DataTables and DataAssets.</blockquote>
+            </section>
+
+            <section id="whatcrosses" class="lesson-section">
+                <h2>What Can Cross</h2>
+                <p>A clear line on what's boundary-friendly and what isn't:</p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Crosses the boundary ✅</th><th>Does NOT cross ❌</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>Primitives: <code>int32</code>, <code>float</code>, <code>bool</code></td><td>Raw pointers to non-UObjects</td></tr>
+                            <tr><td><code>FString</code>, <code>FName</code>, <code>FText</code></td><td><code>std::</code> types (<code>std::vector</code>, <code>std::string</code>)</td></tr>
+                            <tr><td><code>UObject*</code> / <code>AActor*</code> / <code>TObjectPtr</code></td><td><code>USTRUCT</code>/<code>UENUM</code> <em>without</em> <code>BlueprintType</code></td></tr>
+                            <tr><td><code>USTRUCT</code>/<code>UENUM</code> with <code>BlueprintType</code></td><td>Templates other than the supported containers</td></tr>
+                            <tr><td><code>TArray</code>/<code>TMap</code>/<code>TSet</code> of the above</td><td>Un-reflected plain C++ classes</td></tr>
+                            <tr><td><code>TSubclassOf&lt;T&gt;</code></td><td>Function pointers / lambdas</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card card-warning">
+                    <h4>⚠️ The error you'll see</h4>
+                    <p>Try to expose a non-reflection type on a <code>UFUNCTION</code>/<code>UPROPERTY</code> and UHT stops the build with a message like "Type is not supported by blueprint." The fix is always: make it reflection-friendly (add <code>BlueprintType</code> to your struct/enum, use an Unreal container instead of <code>std::</code>, or wrap it) — or keep it C++-only and expose a boundary-friendly summary instead.</p>
+                </div>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: A loot table entry</h3>
+                    <p><strong>Objective:</strong> Model a Blueprint-friendly data bundle.</p>
+                    <ol>
+                        <li>Create <code>UENUM(BlueprintType) ERarity : uint8</code> with Common/Rare/Epic/Legendary and display names.</li>
+                        <li>Create <code>USTRUCT(BlueprintType) FLootEntry</code> with: a <code>TSubclassOf&lt;AActor&gt; ItemClass</code>, an <code>ERarity Rarity</code>, and a <code>float DropChance</code> (BP-writable each).</li>
+                        <li>Add a <code>BlueprintCallable</code> function <code>void GrantLoot(const FLootEntry&amp; Entry)</code>.</li>
+                        <li>Which member would fail to cross the boundary if you used <code>std::string</code> for a name instead of <code>FName</code>?</li>
+                    </ol>
+
+                    <details>
+                        <summary>✅ Reference &amp; answer</summary>
+                        <pre><code class="language-cpp">UENUM(BlueprintType)
+enum class ERarity : uint8 {
+    Common UMETA(DisplayName="Common"), Rare UMETA(DisplayName="Rare"),
+    Epic UMETA(DisplayName="Epic"), Legendary UMETA(DisplayName="Legendary")
+};
+
+USTRUCT(BlueprintType)
+struct FLootEntry {
+    GENERATED_BODY()
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) TSubclassOf&lt;AActor&gt; ItemClass;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) ERarity Rarity = ERarity::Common;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite) float DropChance = 0.1f;
+};</code></pre>
+                        <p>A <code>std::string</code> name would fail — it's not reflection-friendly and UHT rejects it. Use <code>FName</code> or <code>FString</code>/<code>FText</code>.</p>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> What makes a <code>USTRUCT</code> usable as a Blueprint type?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — the BlueprintType specifier on the USTRUCT.">A) <code>USTRUCT(BlueprintType)</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="That's for classes' spawn menu.">B) <code>meta = (BlueprintSpawnableComponent)</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="Not a struct specifier.">C) <code>UCLASS(Blueprintable)</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> A <code>BlueprintType</code> enum must have which underlying type?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — uint8 is required for Blueprint-exposed enums.">A) <code>: uint8</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="int32 base isn't accepted for BP enums.">B) <code>: int32</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="A base type is required.">C) No underlying type</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> Which of these can NOT be exposed on a <code>UFUNCTION</code>?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — std::vector isn't reflection-friendly; use TArray.">A) <code>std::vector&lt;int&gt;</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="This is boundary-friendly.">B) <code>TArray&lt;FWeaponStats&gt;</code> (BlueprintType struct)</button>
+                            <button class="quiz-option" data-correct="false" data-hint="This is fine.">C) <code>TSubclassOf&lt;AActor&gt;</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li><code>USTRUCT(BlueprintType)</code> + <code>BlueprintReadWrite</code> members makes a struct a full Blueprint type with break/make pins.</li>
+                        <li><code>UENUM(BlueprintType)</code> requires <code>enum class ... : uint8</code>; <code>UMETA(DisplayName)</code> sets friendly dropdown labels.</li>
+                        <li>Pass structs (as <code>const&amp;</code>) and enums through <code>UFUNCTION</code>s; arrays of them work too.</li>
+                        <li><code>TSubclassOf&lt;T&gt;</code> properties give designers filtered class pickers — the backbone of data-driven design.</li>
+                        <li>Only <strong>reflection-friendly</strong> types cross the boundary; <code>std::</code>/raw/un-reflected types don't — UHT enforces it.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/structs-in-unreal-engine" target="_blank" rel="noopener">Structs (Epic)</a></li>
+                    <li><a href="https://benui.ca/unreal/ustruct/" target="_blank" rel="noopener">BenUI — USTRUCT &amp; UENUM reference</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p>You now have every interop tool — functions, properties, structs, enums, class pickers. The finale of the module assembles them into <strong>the pattern</strong>: a C++ base class of mechanics, extended by Blueprint subclasses of content. One <code>AWeaponBase</code>, many weapons.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Lesson complete!</h3>
+                    <p>Rich data crosses freely. Time to assemble the master pattern.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m06_l02_exposing_properties.html" class="prev-lesson">← Previous: Exposing Properties to Blueprint</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m06_l04_cpp_base_blueprint_subclass.html" class="next-lesson">Next: The C++ Base / Blueprint Subclass Pattern →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

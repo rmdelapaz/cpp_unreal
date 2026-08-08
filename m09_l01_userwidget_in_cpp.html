@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Building UMG user interfaces from C++ in Unreal Engine 5.8: UUserWidget subclasses, BindWidget, CreateWidget, AddToViewport, and the C++ base / WBP subclass pattern.">
+    <meta name="author" content="Ray de la Paz">
+    <title>UserWidget &amp; UMG in C++ — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 9</a></li>
+            <li aria-current="page">Lesson 9.1: UserWidget &amp; UMG in C++</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>🖼️ Lesson 9.1: UserWidget &amp; UMG in C++</h1>
+                <p class="lead">HUDs, menus, health bars — game UI is built with UMG. Designers lay out widgets visually in a Widget Blueprint; your C++ drives the logic behind them. This lesson wires the two together with the same base-class-plus-subclass pattern you mastered for weapons in Module 6.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Create a <code>UUserWidget</code> subclass in C++ and pair it with a Widget Blueprint</li>
+                        <li>Bind C++ pointers to designer-placed widgets with <code>meta = (BindWidget)</code></li>
+                        <li>Create a widget at runtime and add it to the viewport</li>
+                        <li>Use <code>NativeConstruct</code> as the widget's init hook</li>
+                        <li>Add the UMG module dependency</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 60 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#split" class="toc-link">The UMG Split</a></li>
+                        <li><a href="#setup" class="toc-link">Module &amp; Base Class</a></li>
+                        <li><a href="#bindwidget" class="toc-link">BindWidget</a></li>
+                        <li><a href="#create" class="toc-link">Creating &amp; Showing a Widget</a></li>
+                        <li><a href="#lifecycle" class="toc-link">Widget Lifecycle</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="split" class="lesson-section">
+                <h2>The UMG Split</h2>
+                <p>UMG has two halves that mirror the C++/Blueprint division you already know:</p>
+
+                <div class="mermaid">
+                    graph LR
+                        WBP["Widget Blueprint (WBP_HUD)<br/>visual layout: text, bars, buttons"] -->|"is a subclass of"| CPP["UMyHUDWidget (C++)<br/>logic: update values, handle clicks"]
+                        CPP -->|"BindWidget pointers"| WBP
+                </div>
+                <figure>
+                    <figcaption>Figure 1: A Widget Blueprint holds the visual layout; a C++ <code>UUserWidget</code> base holds the logic. <code>BindWidget</code> connects C++ pointers to the widgets the designer placed — the same base/subclass split as Lesson 6.4.</figcaption>
+                </figure>
+
+                <div class="card card-accent">
+                    <h4>📖 Why not build the layout in C++?</h4>
+                    <p>You <em>can</em> construct widgets entirely in code (via Slate), but it's verbose and non-visual. The idiomatic approach is: <strong>lay out visually in a Widget Blueprint, drive with C++</strong>. Designers arrange and style; you bind to the pieces you need and control behavior. It's the hybrid model (Lesson 1.1) applied to UI.</p>
+                </div>
+            </section>
+
+            <section id="setup" class="lesson-section">
+                <h2>Module &amp; Base Class</h2>
+                <p>UMG lives in its own module — add it to <code>.Build.cs</code> (Lesson 2.1/8.1) or nothing will compile:</p>
+
+                <pre><code class="language-csharp">// MyProject.Build.cs
+PublicDependencyModuleNames.AddRange(new string[]
+{ "Core", "CoreUObject", "Engine", "InputCore", "UMG" });   // ← add UMG</code></pre>
+
+                <p>Then a <code>UUserWidget</code> subclass. Create via <strong>New C++ Class → User Widget</strong>:</p>
+
+                <pre><code class="language-cpp">// MyHUDWidget.h
+#pragma once
+#include "CoreMinimal.h"
+#include "Blueprint/UserWidget.h"
+#include "MyHUDWidget.generated.h"
+
+class UProgressBar;
+class UTextBlock;
+
+UCLASS(Abstract)   // Abstract: use it via a Widget Blueprint subclass (Lesson 6.4)
+class MYPROJECT_API UMyHUDWidget : public UUserWidget
+{
+    GENERATED_BODY()
+
+protected:
+    virtual void NativeConstruct() override;   // the widget's "BeginPlay"
+};</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ Same pattern, new class</h4>
+                    <p>Mark the C++ widget <code>Abstract</code> and create a Widget Blueprint <em>subclass</em> of it (right-click the C++ class → but for widgets you reparent a WBP, or create the WBP with your class as its parent). The designer builds layout in the WBP; your C++ base holds logic. If this feels familiar, it's Lesson 6.4's <code>AWeaponBase</code> pattern applied to UI.</p>
+                </div>
+            </section>
+
+            <section id="bindwidget" class="lesson-section">
+                <h2>BindWidget</h2>
+                <p>Here's the connective tissue. A designer places a Progress Bar named <code>HealthBar</code> and a Text Block named <code>AmmoText</code> in the Widget Blueprint. In C++, you declare pointers with <code>meta = (BindWidget)</code>, and Unreal <strong>automatically links them by name</strong> at construction.</p>
+
+                <pre><code class="language-cpp">// MyHUDWidget.h — add bound widget pointers.
+protected:
+    // The name MUST match the widget's name in the Widget Blueprint.
+    UPROPERTY(meta = (BindWidget))
+    TObjectPtr&lt;UProgressBar&gt; HealthBar;
+
+    UPROPERTY(meta = (BindWidget))
+    TObjectPtr&lt;UTextBlock&gt; AmmoText;
+
+    // Optional binding — no error if the WBP lacks it:
+    UPROPERTY(meta = (BindWidgetOptional))
+    TObjectPtr&lt;UTextBlock&gt; ScoreText;</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Name match is mandatory (and case-sensitive)</h4>
+                    <p>With <code>BindWidget</code>, the C++ property name must <strong>exactly match</strong> the widget's name in the Widget Blueprint. If they don't match, the Blueprint won't compile — it errors that a required bound widget is missing. Use <code>BindWidgetOptional</code> when a widget might not exist in every subclass. This name-based binding is the reflection system again (Lesson 2.2) — it links by name at runtime.</p>
+                </div>
+
+                <div class="card card-accent">
+                    <h4>📖 Now you have typed access</h4>
+                    <p>Once bound, <code>HealthBar</code> and <code>AmmoText</code> are ordinary pointers into the designer's layout. You call their API — <code>HealthBar->SetPercent(...)</code>, <code>AmmoText->SetText(...)</code> — from C++, with full type safety. The designer owns <em>where</em> the bar is and how it looks; you own <em>what value</em> it shows.</p>
+                </div>
+            </section>
+
+            <section id="create" class="lesson-section">
+                <h2>Creating &amp; Showing a Widget</h2>
+                <p>A widget doesn't appear until you create an instance and add it to the viewport. This is typically done from the PlayerController (Lesson 4.3 — UI belongs to the player).</p>
+
+                <pre><code class="language-cpp">// In the PlayerController header:
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI")
+TSubclassOf&lt;UMyHUDWidget&gt; HUDWidgetClass;   // designer assigns WBP_HUD
+
+UPROPERTY()
+TObjectPtr&lt;UMyHUDWidget&gt; HUDWidget;          // the live instance (GC-safe, Lesson 2.5)</code></pre>
+
+                <pre><code class="language-cpp">// In the PlayerController .cpp:
+void AMyPlayerController::BeginPlay()
+{
+    Super::BeginPlay();
+
+    if (HUDWidgetClass)
+    {
+        // CreateWidget makes the instance; 'this' controller is its owner.
+        HUDWidget = CreateWidget&lt;UMyHUDWidget&gt;(this, HUDWidgetClass);
+        if (HUDWidget)
+        {
+            HUDWidget->AddToViewport();   // now it's on screen
+        }
+    }
+}</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ TSubclassOf again</h4>
+                    <p><code>TSubclassOf&lt;UMyHUDWidget&gt;</code> (Lesson 3.4/6.3) lets the designer assign <code>WBP_HUD</code> in the editor — code doesn't hardcode which widget asset to use. <code>CreateWidget</code> instantiates it, <code>AddToViewport</code> shows it. Store the instance as a <code>UPROPERTY</code> so the GC keeps it alive and you can update or remove it later.</p>
+                </div>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Remove it when done</h4>
+                    <p>A widget added to the viewport stays until removed. Call <code>HUDWidget->RemoveFromParent()</code> when the UI should disappear (game over, menu closed). Leaving orphaned widgets on screen — or recreating them without removing the old ones — is a common UI leak.</p>
+                </div>
+            </section>
+
+            <section id="lifecycle" class="lesson-section">
+                <h2>Widget Lifecycle</h2>
+                <p>Widgets have their own lifecycle hooks, analogous to an actor's (Lesson 3.2):</p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Hook</th><th>Runs when</th><th>Use for</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>NativeConstruct</code></td><td>The widget is constructed / added</td><td>Init, subscribe to events, first values (like <code>BeginPlay</code>)</td></tr>
+                            <tr><td><code>NativeDestruct</code></td><td>The widget is removed/destroyed</td><td>Unsubscribe, cleanup (like <code>EndPlay</code>)</td></tr>
+                            <tr><td><code>NativeTick</code></td><td>Every frame (if enabled)</td><td>Rarely — prefer events (next lesson)</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <pre><code class="language-cpp">void UMyHUDWidget::NativeConstruct()
+{
+    Super::NativeConstruct();   // always call Super (Lesson 1.5 discipline)
+
+    // Bound widgets are valid here — safe to set initial values.
+    if (HealthBar) { HealthBar->SetPercent(1.0f); }
+    if (AmmoText)  { AmmoText->SetText(FText::FromString(TEXT("30 / 30"))); }
+}</code></pre>
+
+                <blockquote>
+                    <strong>💡 NativeConstruct is where bindings are ready.</strong> Don't touch bound widgets in the C++ constructor — like an actor's constructor (Lesson 3.2), it runs too early, before the layout exists. <code>NativeConstruct</code> is the widget's "the layout is built, go" moment — the parallel to <code>BeginPlay</code>. The next lesson uses it to subscribe to gameplay events.</blockquote>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: A HUD scaffold</h3>
+                    <p><strong>Objective:</strong> Set up the widget and show it.</p>
+                    <ol>
+                        <li>Create <code>UPlayerHUD : public UUserWidget</code> (<code>Abstract</code>) with <code>BindWidget</code> pointers for a <code>UProgressBar* HealthBar</code> and a <code>UTextBlock* AmmoText</code>.</li>
+                        <li>In the PlayerController, expose <code>TSubclassOf&lt;UPlayerHUD&gt; HUDClass</code>, and in <code>BeginPlay</code> create it and add it to the viewport.</li>
+                        <li>Set placeholder values in <code>NativeConstruct</code>.</li>
+                        <li>Why must the C++ pointer names match the Widget Blueprint widget names exactly?</li>
+                    </ol>
+
+                    <details>
+                        <summary>✅ Answer to Q4</summary>
+                        <p>Because <code>BindWidget</code> links by <em>name</em> through the reflection system — Unreal finds the WBP widget whose name equals the C++ property name. A mismatch means it can't find the widget, so the Widget Blueprint fails to compile with a "missing bind widget" error. It's the same name-based reflection binding as <code>AddDynamic</code> in Module 5.</p>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> What links a C++ pointer to a widget placed in a Widget Blueprint?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — meta = (BindWidget) binds by matching name.">A) <code>UPROPERTY(meta = (BindWidget))</code> with a matching name</button>
+                            <button class="quiz-option" data-correct="false" data-hint="That's for adding components.">B) <code>CreateDefaultSubobject</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="That's for spawning actors.">C) <code>SpawnActor</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> Which puts a created widget on screen?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — AddToViewport displays the widget.">A) <code>AddToViewport()</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="That removes it.">B) <code>RemoveFromParent()</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="That just constructs the instance.">C) <code>CreateWidget()</code> alone</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> Where can you first safely set values on bound widgets?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="Too early — layout isn't built.">A) The C++ constructor</button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — NativeConstruct is the widget's BeginPlay-equivalent; bindings are valid.">B) <code>NativeConstruct</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="Not a widget hook name.">C) <code>OnConstruction</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li>UMG splits like C++/Blueprint: <strong>Widget Blueprint = visual layout</strong>, <strong>C++ <code>UUserWidget</code> base = logic</strong> — the Lesson 6.4 pattern for UI.</li>
+                        <li>Add the <strong><code>UMG</code></strong> module to <code>.Build.cs</code>; subclass <code>UUserWidget</code> (mark it <code>Abstract</code>).</li>
+                        <li><code>UPROPERTY(meta = (BindWidget))</code> binds a C++ pointer to a same-named widget in the WBP (name match is mandatory); <code>BindWidgetOptional</code> for optional ones.</li>
+                        <li>Show UI with <code>CreateWidget&lt;T&gt;</code> → <code>AddToViewport</code> (from the PlayerController); store the instance as a <code>UPROPERTY</code> and <code>RemoveFromParent</code> when done.</li>
+                        <li><code>NativeConstruct</code> is the widget's <code>BeginPlay</code> — the first safe place to touch bound widgets.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/umg-ui-designer-for-unreal-engine" target="_blank" rel="noopener">UMG UI Designer (Epic)</a></li>
+                    <li><a href="https://benui.ca/unreal/ui-bindwidget/" target="_blank" rel="noopener">BenUI — BindWidget and UMG in C++</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p>The HUD is on screen with placeholder values. Now make it <em>live</em>: the next lesson drives it from gameplay — subscribing to the <code>OnHealthChanged</code> and <code>OnAmmoChanged</code> events you built in Module 5, and handling button clicks.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Lesson complete!</h3>
+                    <p>Your UI exists. Let's make it react to the game.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m08_l03_writing_a_cpp_plugin.html" class="prev-lesson">← Previous: Writing a C++ Plugin</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m09_l02_data_binding_and_events.html" class="next-lesson">Next: Data Binding &amp; UI Events from C++ →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

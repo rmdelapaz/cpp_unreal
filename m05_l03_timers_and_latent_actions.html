@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Timers and scheduled work in Unreal Engine 5.8 C++: FTimerHandle, SetTimer with delegates and lambdas, looping timers, clearing timers, and avoiding Tick.">
+    <meta name="author" content="Ray de la Paz">
+    <title>Timers &amp; Latent Actions — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 5</a></li>
+            <li aria-current="page">Lesson 5.3: Timers &amp; Latent Actions</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>⏱️ Lesson 5.3: Timers &amp; Latent Actions</h1>
+                <p class="lead">"Do X after 3 seconds." "Fire every 0.2 seconds while held." "Damage the player each second they stand in lava." All of these are timers — and using them instead of counting in <code>Tick</code> is both cleaner and faster. Let's schedule work the right way.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Set a one-shot delay and a looping timer with the timer manager</li>
+                        <li>Store and use an <code>FTimerHandle</code> to clear or query a timer</li>
+                        <li>Bind a timer to a member function, a lambda, or with parameters</li>
+                        <li>Explain why timers beat manual countdowns in <code>Tick</code></li>
+                        <li>Clean up timers safely to avoid callbacks into destroyed actors</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 45 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#why" class="toc-link">Why Not Just Tick?</a></li>
+                        <li><a href="#oneshot" class="toc-link">One-Shot Delays</a></li>
+                        <li><a href="#looping" class="toc-link">Looping Timers</a></li>
+                        <li><a href="#lambdas" class="toc-link">Lambdas &amp; Parameters</a></li>
+                        <li><a href="#cleanup" class="toc-link">Managing &amp; Clearing</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="why" class="lesson-section">
+                <h2>Why Not Just Tick?</h2>
+                <p>You <em>could</em> accumulate <code>DeltaTime</code> in <code>Tick</code> and act when it crosses a threshold. But that means the actor ticks <em>every frame</em> just to check a clock that matters occasionally — wasteful, and it clutters your code with counters.</p>
+
+                <div class="mermaid">
+                    graph TD
+                        A["Need: do X after a delay"] --> Q{"How?"}
+                        Q -->|"Tick + counter"| T["Runs every frame,<br/>manual bookkeeping"]
+                        Q -->|"Timer"| Ti["Engine calls you once,<br/>at the right time"]
+                </div>
+                <figure>
+                    <figcaption>Figure 1: A timer lets the engine call you exactly when needed, so the actor doesn't have to tick every frame just to watch a clock.</figcaption>
+                </figure>
+
+                <div class="card card-success">
+                    <h4>✅ The win</h4>
+                    <p>Timers are managed by the world's <strong>timer manager</strong>. You register "call this function in N seconds" and the engine handles the rest — no per-frame cost on your actor, no counter variables, no <code>Tick</code> just for timing. Cleaner code <em>and</em> better performance.</p>
+                </div>
+            </section>
+
+            <section id="oneshot" class="lesson-section">
+                <h2>One-Shot Delays</h2>
+                <p>Access the timer manager via <code>GetWorldTimerManager()</code>. A one-shot delay runs a function once after a delay:</p>
+
+                <pre><code class="language-cpp">// Header: store a handle so you can cancel/query the timer later.
+FTimerHandle RespawnTimerHandle;
+
+void AEnemy::Die()
+{
+    // Schedule Respawn() to run once, 5 seconds from now.
+    GetWorldTimerManager().SetTimer(
+        RespawnTimerHandle,        // handle (out)
+        this,                      // object to call on
+        &amp;AEnemy::Respawn,          // member function
+        5.0f,                      // delay in seconds
+        false);                    // bLoop = false → one shot
+}
+
+void AEnemy::Respawn()
+{
+    UE_LOG(LogTemp, Log, TEXT("Respawning..."));
+}</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 The FTimerHandle is your receipt</h4>
+                    <p>The <code>FTimerHandle</code> identifies this specific timer. Keep it as a member if you'll ever need to <strong>cancel</strong> it, check whether it's <strong>active</strong>, or see the <strong>remaining time</strong>. If you truly fire-and-forget, you can pass a temporary handle — but most gameplay timers benefit from being cancelable.</p>
+                </div>
+            </section>
+
+            <section id="looping" class="lesson-section">
+                <h2>Looping Timers</h2>
+                <p>Pass <code>bLoop = true</code> to repeat at a fixed interval — perfect for the "damage each second in lava" case from Lesson 5.1's exercise:</p>
+
+                <pre><code class="language-cpp">void ADamageVolume::OnBeginOverlap(/* ...params... */)
+{
+    if (UHealthComponent* Health = OtherActor->FindComponentByClass&lt;UHealthComponent&gt;())
+    {
+        VictimHealth = Health;   // remember who to hurt (UPROPERTY/weak ptr)
+
+        // Every 1 second, call ApplyTick, starting after 1 second, forever.
+        GetWorldTimerManager().SetTimer(
+            DamageTimerHandle, this, &amp;ADamageVolume::ApplyTick, 1.0f, true, 1.0f);
+    }
+}
+
+void ADamageVolume::OnEndOverlap(/* ...params... */)
+{
+    // Stop the repeating damage when they leave.
+    GetWorldTimerManager().ClearTimer(DamageTimerHandle);
+}
+
+void ADamageVolume::ApplyTick()
+{
+    if (VictimHealth.IsValid())        // TWeakObjectPtr from Lesson 2.5
+    {
+        VictimHealth->ApplyDamage(DamagePerTick);
+    }
+}</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ The SetTimer signature's last arg</h4>
+                    <p>The final parameter is the <strong>first-delay</strong> — how long before the first call. Here <code>1.0f</code> means "wait a second, then start ticking every second." Pass <code>0.0f</code> to fire immediately then repeat. This lets you separate "how often" from "how soon it starts."</p>
+                </div>
+            </section>
+
+            <section id="lambdas" class="lesson-section">
+                <h2>Lambdas &amp; Parameters</h2>
+                <p>Sometimes you want a quick inline action, or to pass arguments the plain member-function form can't. Two tools:</p>
+
+                <h3>A lambda for short inline work</h3>
+                <pre><code class="language-cpp">FTimerHandle Handle;
+GetWorldTimerManager().SetTimer(Handle, [this]()
+{
+    // Runs after the delay. Capture 'this' to reach members.
+    UE_LOG(LogTemp, Log, TEXT("Delayed hello from %s"), *GetName());
+}, 2.0f, false);</code></pre>
+
+                <h3>A delegate to pass parameters</h3>
+                <pre><code class="language-cpp">// Bind a function that takes an argument via a timer delegate:
+FTimerDelegate Del = FTimerDelegate::CreateUObject(
+    this, &amp;AEnemy::TakeDamageOverTime, 5.0f /* the DamageAmount arg */);
+GetWorldTimerManager().SetTimer(DotHandle, Del, 1.0f, true);</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Lambda capture &amp; lifetime</h4>
+                    <p>A lambda capturing <code>this</code> will call into the actor when it fires — but if the actor was destroyed in the meantime, that's a crash. Timers on an actor are automatically cleared when the actor is destroyed, which covers the common case; but if you capture <em>other</em> objects, make sure they outlive the timer, or capture weak pointers and check validity. Prefer <code>CreateUObject</code> delegates for UObject targets — they integrate with lifetime better than raw captures.</p>
+                </div>
+            </section>
+
+            <section id="cleanup" class="lesson-section">
+                <h2>Managing &amp; Clearing</h2>
+                <p>The timer manager offers more than set/clear:</p>
+
+                <pre><code class="language-cpp">FTimerManager&amp; TM = GetWorldTimerManager();
+
+TM.ClearTimer(Handle);                    // cancel it
+bool bActive   = TM.IsTimerActive(Handle);        // is it running?
+float Remaining = TM.GetTimerRemaining(Handle);   // seconds left
+float Elapsed   = TM.GetTimerElapsed(Handle);     // seconds so far
+TM.PauseTimer(Handle);                     // pause / UnPauseTimer</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Clear timers you own on cleanup</h4>
+                    <p>Symmetric to Lesson 2.6's <code>EndPlay</code> discipline: if a component or actor starts a timer, it should clear it when it goes away or when the condition ends (like the lava's <code>OnEndOverlap</code> above). Actor-bound timers auto-clear on <code>Destroy</code>, but explicit cleanup makes intent clear and prevents a timer firing into a half-torn-down state.</p>
+                </div>
+
+                <blockquote>
+                    <strong>💡 SetTimerForNextTick:</strong> when you need something to run <em>next frame</em> (e.g. defer work until after the current frame settles), <code>GetWorldTimerManager().SetTimerForNextTick(this, &amp;AMyActor::DoLater)</code> is the clean idiom — no <code>Tick</code>, no zero-delay hack.
+                </blockquote>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: A weapon fire rate</h3>
+                    <p><strong>Objective:</strong> Use a looping timer for automatic fire.</p>
+                    <ol>
+                        <li>On "fire pressed" (Started), fire once immediately, then start a looping timer at your fire interval that calls <code>Fire()</code>.</li>
+                        <li>On "fire released" (Completed), clear the timer.</li>
+                        <li>Store the <code>FTimerHandle</code> as a member so you can clear it.</li>
+                        <li>Why is this better than checking elapsed time in <code>Tick</code>?</li>
+                    </ol>
+
+                    <details>
+                        <summary>✅ Sketch &amp; reasoning</summary>
+                        <pre><code class="language-cpp">void AWeapon::StartFiring()
+{
+    Fire();   // immediate first shot
+    GetWorldTimerManager().SetTimer(
+        FireTimerHandle, this, &amp;AWeapon::Fire, FireInterval, true);
+}
+void AWeapon::StopFiring()
+{
+    GetWorldTimerManager().ClearTimer(FireTimerHandle);
+}</code></pre>
+                        <p>Better than Tick because the weapon doesn't run any per-frame code while idle, the interval is exact, and there's no counter to maintain — the engine schedules the shots.</p>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> How do you run a function once after a delay?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — SetTimer with bLoop=false schedules a one-shot.">A) <code>SetTimer(Handle, this, &amp;Fn, Delay, false)</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="Counting in Tick is what we're avoiding.">B) Count <code>DeltaTime</code> in <code>Tick</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="Not a scheduling call.">C) <code>Destroy()</code> after the delay</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> What is the <code>FTimerHandle</code> for?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — it identifies the timer so you can clear/query/pause it.">A) Identifying the timer to clear, query, or pause it</button>
+                            <button class="quiz-option" data-correct="false" data-hint="It's not the return value of the callback.">B) Holding the callback's return value</button>
+                            <button class="quiz-option" data-correct="false" data-hint="It doesn't store delta time.">C) Storing the frame delta</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> A looping damage timer should be cleared when…</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — clear it when the condition ends (e.g. the actor leaves the volume).">A) The condition ends (e.g. the actor leaves the volume)</button>
+                            <button class="quiz-option" data-correct="false" data-hint="It won't stop itself when looping.">B) Never — looping timers stop themselves</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Every frame defeats the purpose.">C) Every frame in <code>Tick</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li>Use the <strong>timer manager</strong> (<code>GetWorldTimerManager()</code>) instead of counting in <code>Tick</code> — cleaner and cheaper.</li>
+                        <li><code>SetTimer(Handle, this, &amp;Fn, Time, bLoop, FirstDelay)</code> — <code>bLoop</code> makes it repeat; the last arg is the first-delay.</li>
+                        <li>Keep the <strong><code>FTimerHandle</code></strong> to <code>ClearTimer</code>, check <code>IsTimerActive</code>, or read remaining time.</li>
+                        <li>Bind a member function, a <strong>lambda</strong> (capture carefully), or a <strong><code>FTimerDelegate</code></strong> to pass parameters.</li>
+                        <li><strong>Clear timers</strong> when their condition ends; actor timers auto-clear on <code>Destroy</code>, but explicit cleanup is safest.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/gameplay-timers-in-unreal-engine" target="_blank" rel="noopener">Gameplay Timers (Epic)</a></li>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/FTimerManager" target="_blank" rel="noopener">FTimerManager API (Epic)</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p>You've been <em>binding</em> to engine events (collision, input) with <code>AddDynamic</code>. Now you'll create your <em>own</em> events: <strong>delegates</strong> — letting a <code>UHealthComponent</code> announce <code>OnDeath</code> to anyone listening, the loosely-coupled pattern promised in Module 3.5.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Lesson complete!</h3>
+                    <p>You command time. Now let's build your own events.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m05_l02_traces_and_queries.html" class="prev-lesson">← Previous: Traces &amp; Spatial Queries</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m05_l04_delegates_and_events.html" class="next-lesson">Next: Delegates &amp; Events →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

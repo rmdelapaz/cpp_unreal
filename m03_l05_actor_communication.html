@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Actor communication patterns in Unreal Engine 5.8 C++: direct references, casting, GetComponentByClass, and choosing the right coupling for the job.">
+    <meta name="author" content="Ray de la Paz">
+    <title>Actor Communication Patterns — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 3</a></li>
+            <li aria-current="page">Lesson 3.5: Actor Communication Patterns</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>📡 Lesson 3.5: Actor Communication Patterns</h1>
+                <p class="lead">Games are actors talking: a bullet tells a target it was hit, a button tells a door to open, a pickup tells the player to heal. How you wire those conversations determines whether your codebase stays flexible or turns into a tangle. This lesson surveys the patterns and when to use each.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Communicate via a direct reference and a <code>Cast</code></li>
+                        <li>Reach another actor's component with <code>GetComponentByClass</code> / <code>FindComponentByClass</code></li>
+                        <li>Rank communication patterns by how tightly they couple actors</li>
+                        <li>Recognize when a direct reference is fine and when to decouple</li>
+                        <li>Preview interfaces and delegates as the loosely-coupled options</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 45 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#spectrum" class="toc-link">The Coupling Spectrum</a></li>
+                        <li><a href="#direct" class="toc-link">Direct Reference &amp; Cast</a></li>
+                        <li><a href="#component" class="toc-link">Talking to Components</a></li>
+                        <li><a href="#loose" class="toc-link">Toward Loose Coupling</a></li>
+                        <li><a href="#choosing" class="toc-link">Choosing a Pattern</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="spectrum" class="lesson-section">
+                <h2>The Coupling Spectrum</h2>
+                <p>Communication patterns trade <strong>simplicity</strong> against <strong>coupling</strong> — how much one actor must know about another. Tight coupling is quick to write but brittle; loose coupling takes more setup but scales.</p>
+
+                <div class="mermaid">
+                    graph LR
+                        A["Direct reference + Cast<br/>(tightest)"] --> B["Component lookup"]
+                        B --> C["Interfaces<br/>(Module 5.5)"]
+                        C --> D["Delegates / events<br/>(Module 5.4, loosest)"]
+                </div>
+                <figure>
+                    <figcaption>Figure 1: The coupling spectrum. Left = simplest but most entangled; right = most flexible but more machinery. Match the tool to the relationship.</figcaption>
+                </figure>
+
+                <div class="card card-accent">
+                    <h4>📖 There's no single "right" pattern</h4>
+                    <p>A bullet that hits <em>one specific known target</em> can use a direct call. A button that should open <em>any door without knowing which</em> wants an interface or delegate. Good architecture is picking the <em>loosest</em> coupling that still does the job — not always the loosest possible.</p>
+                </div>
+            </section>
+
+            <section id="direct" class="lesson-section">
+                <h2>Direct Reference &amp; Cast</h2>
+                <p>The simplest conversation: you have a pointer to the other actor, and you call its function. When you only have a base pointer, <code>Cast</code> (Lesson 2.2) narrows it to the type whose API you need.</p>
+
+                <pre><code class="language-cpp">// A projectile that got a hit result knows the actor it struck:
+void AProjectile::OnHit(AActor* HitActor)
+{
+    if (!IsValid(HitActor)) { return; }
+
+    // We need AEnemy-specific behavior, so cast:
+    if (AEnemy* Enemy = Cast&lt;AEnemy&gt;(HitActor))
+    {
+        Enemy->ReactToHit(Damage);   // direct call into the enemy's API
+    }
+}</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Cast couples you to a type</h4>
+                    <p>Every <code>Cast&lt;AEnemy&gt;</code> hard-wires this code to <code>AEnemy</code>. If barrels and turrets should <em>also</em> react to hits, you'd need a cast per type — a smell that says "reach for an interface instead" (Lesson 5.5). One or two known types: casting is fine. Many unrelated types sharing a behavior: decouple.</p>
+                </div>
+
+                <div class="card card-success">
+                    <h4>✅ Store references you'll reuse — as UPROPERTY</h4>
+                    <p>If an actor keeps a reference to another (a turret remembering its target), store it as a <code>UPROPERTY()</code> (Lesson 2.3/2.5) so the GC sees it, or <code>TWeakObjectPtr</code> if it may die. A raw pointer member to another actor is the dangling-pointer bug waiting to happen.</p>
+                </div>
+            </section>
+
+            <section id="component" class="lesson-section">
+                <h2>Talking to Components</h2>
+                <p>Often you don't want the <em>actor</em> — you want a <em>component</em> on it, like the <code>UHealthComponent</code> from Lesson 3.3. Rather than casting the actor to a specific class, ask it for the component by type. This is looser: it works on <em>any</em> actor that has a health component, regardless of its class.</p>
+
+                <pre><code class="language-cpp">void AProjectile::OnHit(AActor* HitActor)
+{
+    if (!IsValid(HitActor)) { return; }
+
+    // Works on ANY actor with a UHealthComponent — character, barrel, turret.
+    if (UHealthComponent* Health = HitActor->FindComponentByClass&lt;UHealthComponent&gt;())
+    {
+        const bool bKilled = Health->ApplyDamage(Damage);
+        if (bKilled) { /* award score, spawn effect... */ }
+    }
+    // No health component? Then this actor simply isn't damageable. No cast needed.
+}</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 Why this is better than casting the actor</h4>
+                    <p>Casting to <code>AEnemy</code> asks "are you this specific class?" Asking for a <code>UHealthComponent</code> asks "do you have this capability?" The second is exactly the composition mindset from Lesson 3.3 — and it means one projectile damages everything damageable, with zero per-type code. This is a favorite real-world pattern precisely because it scales.</p>
+                </div>
+            </section>
+
+            <section id="loose" class="lesson-section">
+                <h2>Toward Loose Coupling</h2>
+                <p>The two loosest patterns get full lessons in Module 5, but here's the preview so you know where the spectrum leads:</p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Pattern</th><th>Question it answers</th><th>Use when</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>Direct + Cast</td><td>"Are you this exact class?"</td><td>One or two known types</td></tr>
+                            <tr><td>Component lookup</td><td>"Do you have this capability?"</td><td>Many types share a component</td></tr>
+                            <tr><td><strong>Interface</strong> (5.5)</td><td>"Can you do this action?"</td><td>Many unrelated types implement a behavior (e.g. <code>IInteractable</code>)</td></tr>
+                            <tr><td><strong>Delegate / event</strong> (5.4)</td><td>"Tell whoever's listening that X happened"</td><td>One-to-many, sender shouldn't know receivers (e.g. "OnDeath")</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <blockquote>
+                    <strong>💡 The direction of knowledge:</strong> casting and component lookup are <em>caller asks callee</em>. Delegates flip it — the callee <em>announces</em> and callers subscribe, so the announcer needs to know <em>nothing</em> about who's listening. That inversion is what makes events so decoupled, and why a <code>UHealthComponent</code> firing an <code>OnDeath</code> event (Module 5.4) is cleaner than everyone polling <code>IsDead()</code>.</blockquote>
+            </section>
+
+            <section id="choosing" class="lesson-section">
+                <h2>Choosing a Pattern</h2>
+                <p>A practical decision guide you can apply on the spot:</p>
+
+                <div class="mermaid">
+                    graph TD
+                        Start["A needs to talk to B"] --> Q1{"Is it one/two<br/>specific known types?"}
+                        Q1 -->|Yes| Direct["Direct reference + Cast"]
+                        Q1 -->|No| Q2{"Do the targets share<br/>a component/capability?"}
+                        Q2 -->|Yes| Comp["FindComponentByClass"]
+                        Q2 -->|No| Q3{"Is it 'tell whoever<br/>cares that X happened'?"}
+                        Q3 -->|Yes| Del["Delegate / event"]
+                        Q3 -->|No| Iface["Interface"]
+                </div>
+                <figure>
+                    <figcaption>Figure 2: Routing a conversation. Notice how rarely the answer is "cast to a concrete class everywhere" — that's usually the pattern to grow out of.</figcaption>
+                </figure>
+
+                <div class="card card-warning">
+                    <h4>⚠️ The anti-pattern to avoid</h4>
+                    <p>A long chain of <code>Cast&lt;A&gt; ... else Cast&lt;B&gt; ... else Cast&lt;C&gt;</code> to handle "many things that all do X" is the classic sign you should have used an <strong>interface</strong> or a <strong>component</strong>. When you catch yourself writing the third cast for the same behavior, stop and decouple.</p>
+                </div>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: Pick the pattern</h3>
+                    <p><strong>Objective:</strong> Choose the loosest pattern that fits each scenario.</p>
+                    <ol>
+                        <li>A homing missile that must call <code>Explode()</code> on its one specific target actor</li>
+                        <li>An explosion that should damage every damageable thing in radius (characters, barrels, crates)</li>
+                        <li>A lever that should trigger "activate" on whatever it's linked to — doors, lifts, traps</li>
+                        <li>An enemy's death that a score manager, a spawner, and a quest tracker all need to know about</li>
+                    </ol>
+
+                    <details>
+                        <summary>✅ Answers</summary>
+                        <ul>
+                            <li><strong>1.</strong> Direct reference + <code>Cast</code> — one known target, simplest is fine.</li>
+                            <li><strong>2.</strong> Component lookup — <code>FindComponentByClass&lt;UHealthComponent&gt;()</code> on each actor in radius; works regardless of class.</li>
+                            <li><strong>3.</strong> Interface (e.g. <code>IActivatable</code>) — many unrelated types share the "activate" action (Module 5.5).</li>
+                            <li><strong>4.</strong> Delegate/event — the enemy fires <code>OnDeath</code>; the three systems subscribe without the enemy knowing them (Module 5.4).</li>
+                        </ul>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> Which asks "do you have this capability?" rather than "are you this class?"</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="That checks a concrete type.">A) <code>Cast&lt;AEnemy&gt;(Actor)</code></button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — FindComponentByClass checks for a capability/component, not a class.">B) <code>Actor->FindComponentByClass&lt;UHealthComponent&gt;()</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="That's a C-style cast — never for UObjects.">C) <code>(AEnemy*)Actor</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> A sender that shouldn't know who receives its "X happened" message should use:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="That requires knowing the receiver's type.">A) A direct cast to each receiver</button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — delegates/events let listeners subscribe; the sender stays ignorant of them.">B) A delegate / event</button>
+                            <button class="quiz-option" data-correct="false" data-hint="That still couples to a concrete class.">C) Storing a pointer to every receiver</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> Repeated <code>Cast&lt;A&gt; else Cast&lt;B&gt; else Cast&lt;C&gt;</code> for one shared behavior signals you should use:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — an interface (or component) captures 'can do X' across unrelated types cleanly.">A) An interface or a component</button>
+                            <button class="quiz-option" data-correct="false" data-hint="More casts make it worse.">B) Even more casts</button>
+                            <button class="quiz-option" data-correct="false" data-hint="A C-style cast is unsafe, not a fix.">C) A C-style cast</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li>Communication patterns range from <strong>tight</strong> (direct reference + <code>Cast</code>) to <strong>loose</strong> (interfaces, delegates) — pick the loosest that does the job.</li>
+                        <li><strong>Direct + Cast</strong> is fine for one or two known types; store reused references as <code>UPROPERTY</code>/<code>TWeakObjectPtr</code>.</li>
+                        <li><strong><code>FindComponentByClass&lt;T&gt;</code></strong> asks "do you have this capability?" — it works across unrelated actor classes and embodies composition.</li>
+                        <li><strong>Interfaces</strong> (Module 5.5) express "can you do X?"; <strong>delegates</strong> (Module 5.4) let a sender announce events without knowing listeners.</li>
+                        <li>Chained casts for one shared behavior is an anti-pattern — reach for an interface or component instead.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/gameplay-classes-in-unreal-engine" target="_blank" rel="noopener">Gameplay Classes (Epic)</a></li>
+                    <li><a href="https://dev.epicgames.com/community/learning/tutorials/" target="_blank" rel="noopener">Epic Developer Community tutorials</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p><strong>Module 3 is complete</strong> — you can build actors and components, spawn and destroy them, and wire them together. <strong>Module 4</strong> puts a player in the driver's seat: Enhanced Input in C++, Pawns and Characters and movement, and the PlayerController.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Module 3 complete!</h3>
+                    <p>The gameplay framework is yours. Time to hand the controls to a player.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m03_l04_spawning_and_lifecycle.html" class="prev-lesson">← Previous: Spawning, Destroying &amp; Iterating Actors</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m04_l01_enhanced_input_in_cpp.html" class="next-lesson">Next: Enhanced Input in C++ →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

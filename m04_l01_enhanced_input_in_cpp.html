@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="The Enhanced Input system in Unreal Engine 5.8 C++: Input Actions, Input Mapping Contexts, the EnhancedInput subsystem, and binding actions to C++ functions.">
+    <meta name="author" content="Ray de la Paz">
+    <title>Enhanced Input in C++ — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 4</a></li>
+            <li aria-current="page">Lesson 4.1: Enhanced Input in C++</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>🎮 Lesson 4.1: Enhanced Input in C++</h1>
+                <p class="lead">Enhanced Input is Unreal 5's modern input system, and it's how you connect a keypress or thumbstick to your C++ gameplay. It's more setup than the old system — but it buys you rebindable controls, contexts, and clean data-driven bindings. Let's wire it end to end.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Explain Input Actions and Input Mapping Contexts and how they relate</li>
+                        <li>Add a mapping context through the Enhanced Input local player subsystem</li>
+                        <li>Bind an Input Action to a C++ function with <code>UEnhancedInputComponent</code></li>
+                        <li>Read the input value via <code>FInputActionValue</code> (bool, axis1D, axis2D)</li>
+                        <li>Choose the right <code>ETriggerEvent</code> (Triggered, Started, Completed)</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 60 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Enhanced Input is the standard now</h4>
+                    <p>The older "Action/Axis Mappings" input system is legacy in UE5. New projects should use Enhanced Input — it's what the 5.8 templates ship with and what this course teaches. If you find old tutorials using <code>BindAxis("MoveForward", ...)</code>, they predate this system.</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#pieces" class="toc-link">The Four Pieces</a></li>
+                        <li><a href="#setup" class="toc-link">Module Setup</a></li>
+                        <li><a href="#context" class="toc-link">Adding a Mapping Context</a></li>
+                        <li><a href="#binding" class="toc-link">Binding Actions in C++</a></li>
+                        <li><a href="#value" class="toc-link">Reading Input Values</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="pieces" class="lesson-section">
+                <h2>The Four Pieces</h2>
+                <p>Enhanced Input separates "what the player did" from "which key did it" from "your code." Four pieces cooperate:</p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Piece</th><th>What it is</th><th>Where it's made</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><strong>Input Action (IA)</strong></td><td>An abstract intent: "Jump", "Move", "Look" — plus its value type</td><td>Editor asset (<code>UInputAction</code>)</td></tr>
+                            <tr><td><strong>Input Mapping Context (IMC)</strong></td><td>A set of key→action mappings that can be layered on/off</td><td>Editor asset (<code>UInputMappingContext</code>)</td></tr>
+                            <tr><td><strong>EnhancedInput subsystem</strong></td><td>Runtime manager that holds active contexts for a player</td><td>Engine-provided</td></tr>
+                            <tr><td><strong>Your Pawn/Controller C++</strong></td><td>Binds actions to functions and reacts</td><td>Your code</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="mermaid">
+                    graph LR
+                        Key["W key / Left stick"] --> IMC["Mapping Context<br/>(key → IA_Move)"]
+                        IMC --> IA["IA_Move<br/>(Axis2D intent)"]
+                        IA --> Sub["EnhancedInput Subsystem"]
+                        Sub --> Bind["Your bound C++ function<br/>Move(const FInputActionValue&amp;)"]
+                </div>
+                <figure>
+                    <figcaption>Figure 1: A key flows through a mapping context into an abstract Input Action, which the subsystem routes to your bound C++ function. Change the key in the IMC and your code never changes.</figcaption>
+                </figure>
+
+                <div class="card card-accent">
+                    <h4>📖 Why the indirection?</h4>
+                    <p>Because "the player wants to move" and "the W key" are different concerns. Rebinding, gamepad vs keyboard, and context switches (on foot vs in a menu vs driving) all become data changes in IMCs — your gameplay code binds to the <em>intent</em> (<code>IA_Move</code>) and stays untouched. That decoupling is the whole point, and it mirrors the loose-coupling lesson from Module 3.5.</p>
+                </div>
+            </section>
+
+            <section id="setup" class="lesson-section">
+                <h2>Module Setup</h2>
+                <p>Enhanced Input lives in its own module. Add it to your <code>.Build.cs</code> (Lesson 2.1) or you'll get unresolved-symbol errors:</p>
+
+                <pre><code class="language-csharp">// MyProject.Build.cs
+PublicDependencyModuleNames.AddRange(new string[]
+{
+    "Core", "CoreUObject", "Engine", "InputCore",
+    "EnhancedInput"    // ← required for Enhanced Input
+});</code></pre>
+
+                <p>The IA and IMC assets are created in the editor (right-click → Input). In C++ you reference them via <code>UPROPERTY</code> pointers a designer assigns:</p>
+
+                <pre><code class="language-cpp">// In your Pawn/Character header:
+class UInputAction;
+class UInputMappingContext;
+
+// Assigned in the editor to IMC_Default, IA_Move, IA_Look, IA_Jump...
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+TObjectPtr&lt;UInputMappingContext&gt; DefaultMappingContext;
+
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+TObjectPtr&lt;UInputAction&gt; MoveAction;
+
+UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Input")
+TObjectPtr&lt;UInputAction&gt; JumpAction;</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ Assets in the editor, references in C++</h4>
+                    <p>You don't create IA/IMC assets in code — you make them in the editor and expose <code>UPROPERTY</code> slots your C++ binds against. This is the hybrid pattern again: C++ owns the <em>logic</em>, the editor owns the <em>data</em> (which keys, which actions).</p>
+                </div>
+            </section>
+
+            <section id="context" class="lesson-section">
+                <h2>Adding a Mapping Context</h2>
+                <p>A mapping context is inactive until you add it to the player's Enhanced Input subsystem. Do this in <code>BeginPlay</code> (or on possession — Lesson 4.3), because it needs the world and the player controller.</p>
+
+                <pre><code class="language-cpp">#include "EnhancedInputSubsystems.h"   // UEnhancedInputLocalPlayerSubsystem
+
+void AMyCharacter::BeginPlay()
+{
+    Super::BeginPlay();
+
+    // The PlayerController driving this pawn (may be null for AI-possessed pawns):
+    if (APlayerController* PC = Cast&lt;APlayerController&gt;(GetController()))
+    {
+        // Get the per-player Enhanced Input subsystem and add our context.
+        if (UEnhancedInputLocalPlayerSubsystem* Subsystem =
+                ULocalPlayer::GetSubsystem&lt;UEnhancedInputLocalPlayerSubsystem&gt;(
+                    PC->GetLocalPlayer()))
+        {
+            Subsystem->AddMappingContext(DefaultMappingContext, /*Priority=*/0);
+        }
+    }
+}</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 Contexts have priority</h4>
+                    <p>You can layer multiple contexts — e.g. a base movement context plus a temporary "vehicle" context on top. The <strong>priority</strong> number decides which wins when two contexts map the same key (higher priority takes precedence). Add and remove contexts to switch control schemes without rebinding anything.</p>
+                </div>
+            </section>
+
+            <section id="binding" class="lesson-section">
+                <h2>Binding Actions in C++</h2>
+                <p>Binding happens in the overridable <code>SetupPlayerInputComponent</code>. The incoming component is an <code>UEnhancedInputComponent</code> — cast it, then <code>BindAction</code>.</p>
+
+                <pre><code class="language-cpp">#include "EnhancedInputComponent.h"
+
+void AMyCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
+{
+    Super::SetupPlayerInputComponent(PlayerInputComponent);
+
+    // Enhanced Input provides a richer component; cast to reach BindAction.
+    if (UEnhancedInputComponent* EIC = Cast&lt;UEnhancedInputComponent&gt;(PlayerInputComponent))
+    {
+        // BindAction(Action, TriggerEvent, Object, &amp;Function)
+        EIC->BindAction(MoveAction, ETriggerEvent::Triggered, this, &amp;AMyCharacter::Move);
+        EIC->BindAction(JumpAction, ETriggerEvent::Started,   this, &amp;AMyCharacter::StartJump);
+        EIC->BindAction(JumpAction, ETriggerEvent::Completed, this, &amp;AMyCharacter::StopJump);
+    }
+}</code></pre>
+
+                <h3>Trigger events — <em>when</em> the function fires</h3>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th><code>ETriggerEvent</code></th><th>Fires when</th><th>Typical use</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>Triggered</code></td><td>Every frame the action is active/held</td><td>Continuous move, look</td></tr>
+                            <tr><td><code>Started</code></td><td>The moment the action begins (press)</td><td>Jump, fire-once, open menu</td></tr>
+                            <tr><td><code>Completed</code></td><td>The action ends (release)</td><td>Stop jumping, release charge</td></tr>
+                            <tr><td><code>Ongoing</code> / <code>Canceled</code></td><td>During/aborting a held trigger</td><td>Hold-to-charge mechanics</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Match the event to the intent</h4>
+                    <p>Binding movement to <code>Started</code> would move the player for a single frame; binding it to <code>Triggered</code> keeps it going while held. Conversely, binding "jump" to <code>Triggered</code> would re-trigger every frame. Getting <code>Started</code> vs <code>Triggered</code> right is the most common Enhanced Input fix.</p>
+                </div>
+            </section>
+
+            <section id="value" class="lesson-section">
+                <h2>Reading Input Values</h2>
+                <p>Every bound function receives a <code>const FInputActionValue&amp;</code> — a typed container for the input's current value. You read it according to the action's value type (set on the IA asset).</p>
+
+                <pre><code class="language-cpp">#include "InputActionValue.h"
+
+// A 2D move action (WASD or left stick) -> a Vector2D:
+void AMyCharacter::Move(const FInputActionValue&amp; Value)
+{
+    const FVector2D Axis = Value.Get&lt;FVector2D&gt;();   // X = right/left, Y = fwd/back
+
+    if (Controller)
+    {
+        AddMovementInput(GetActorForwardVector(), Axis.Y);
+        AddMovementInput(GetActorRightVector(),   Axis.X);
+    }
+}
+
+// A digital (button) action -> a bool:
+void AMyCharacter::StartJump(const FInputActionValue&amp; Value)
+{
+    const bool bPressed = Value.Get&lt;bool&gt;();   // usually true on Started
+    Jump();   // ACharacter's built-in jump (Lesson 4.2)
+}
+
+// A 1D axis action (trigger, throttle) -> a float:
+void AMyCharacter::Throttle(const FInputActionValue&amp; Value)
+{
+    const float Amount = Value.Get&lt;float&gt;();
+}</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 Value type must match the action</h4>
+                    <p>An IA declares its value type — Digital (bool), Axis1D (float), or Axis2D (Vector2D). Call <code>Value.Get&lt;T&gt;()</code> with the matching <code>T</code>. Ask a bool action for a <code>FVector2D</code> and you'll get zeros. Set the action's type in the editor and read the same type in C++.</p>
+                </div>
+
+                <div class="card card-success">
+                    <h4>✅ You just built the movement spine</h4>
+                    <p>That <code>Move</code> function — read the 2D axis, feed it to <code>AddMovementInput</code> — is the core of nearly every character controller. Next lesson we pair it with the Character Movement Component to make an actual walking, jumping character.</p>
+                </div>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: Add a "Look" action</h3>
+                    <p><strong>Objective:</strong> Extend the setup with mouse/stick look.</p>
+                    <ol>
+                        <li>Add a <code>UInputAction* LookAction</code> property (Axis2D).</li>
+                        <li>Bind it in <code>SetupPlayerInputComponent</code> to a <code>Look</code> function on <code>ETriggerEvent::Triggered</code>.</li>
+                        <li>In <code>Look</code>, read the <code>FVector2D</code> and call <code>AddControllerYawInput(Axis.X)</code> and <code>AddControllerPitchInput(Axis.Y)</code>.</li>
+                        <li>Explain why <code>Look</code> uses <code>Triggered</code>, not <code>Started</code>.</li>
+                    </ol>
+
+                    <details>
+                        <summary>✅ Look function &amp; reasoning</summary>
+                        <pre><code class="language-cpp">void AMyCharacter::Look(const FInputActionValue&amp; Value)
+{
+    const FVector2D Axis = Value.Get&lt;FVector2D&gt;();
+    AddControllerYawInput(Axis.X);
+    AddControllerPitchInput(Axis.Y);
+}</code></pre>
+                        <p><code>Triggered</code> because looking is continuous — you want it every frame the mouse moves or the stick is held, not just once at the start.</p>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> What must you add to <code>.Build.cs</code> for Enhanced Input?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="That's for UI.">A) <code>"UMG"</code></button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — the EnhancedInput module dependency is required.">B) <code>"EnhancedInput"</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="Not a module name.">C) <code>"Input2"</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> Which trigger event suits continuous movement while a key is held?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="That fires once at press.">A) <code>Started</code></button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — Triggered fires each active frame, ideal for continuous movement.">B) <code>Triggered</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="That fires on release.">C) <code>Completed</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> A 2D movement action's value is read with:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="That's for a button.">A) <code>Value.Get&lt;bool&gt;()</code></button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — Axis2D actions carry a FVector2D.">B) <code>Value.Get&lt;FVector2D&gt;()</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="Wrong dimensionality for 2D.">C) <code>Value.Get&lt;float&gt;()</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li>Enhanced Input separates <strong>intent (Input Action)</strong> from <strong>keys (Mapping Context)</strong> from <strong>your code</strong> — rebinding is a data change, not a code change.</li>
+                        <li>Add <code>"EnhancedInput"</code> to <code>.Build.cs</code>; expose IA/IMC assets as <code>UPROPERTY</code> slots set in the editor.</li>
+                        <li>Add a mapping context via <code>UEnhancedInputLocalPlayerSubsystem::AddMappingContext</code> (in <code>BeginPlay</code>/on possession), with a priority.</li>
+                        <li>Bind in <code>SetupPlayerInputComponent</code> by casting to <code>UEnhancedInputComponent</code> and calling <code>BindAction(Action, ETriggerEvent, this, &amp;Fn)</code>.</li>
+                        <li>Read the value with <code>Value.Get&lt;T&gt;()</code> matching the action's type (bool / float / FVector2D); match <code>ETriggerEvent</code> to the intent.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/enhanced-input-in-unreal-engine" target="_blank" rel="noopener">Enhanced Input (Epic)</a></li>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/input-in-unreal-engine" target="_blank" rel="noopener">Input Overview (Epic)</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p>Input is flowing into your functions. Now let's make it move a real character: <strong>Pawns, Characters, and the Character Movement Component</strong> — turning that <code>AddMovementInput</code> call into walking, jumping, and falling.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Lesson complete!</h3>
+                    <p>The player's intent reaches your code. Let's give it a body to drive.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m03_l05_actor_communication.html" class="prev-lesson">← Previous: Actor Communication Patterns</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m04_l02_pawns_characters_movement.html" class="next-lesson">Next: Pawns, Characters &amp; Movement →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

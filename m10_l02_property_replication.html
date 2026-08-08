@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Property replication in Unreal Engine 5.8 C++: bReplicates, GetLifetimeReplicatedProps, DOREPLIFETIME, Replicated vs ReplicatedUsing, and RepNotify OnRep functions.">
+    <meta name="author" content="Ray de la Paz">
+    <title>Property Replication &amp; RepNotify — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 10</a></li>
+            <li aria-current="page">Lesson 10.2: Property Replication &amp; RepNotify</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>📡 Lesson 10.2: Property Replication &amp; RepNotify</h1>
+                <p class="lead">Replication is Unreal's magic: mark a property replicated, change it on the server, and every client's copy updates automatically — no networking code from you. Add RepNotify and each client can react to the change. This is step 3 of the networking pattern, and it rides the reflection system you already know.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Enable actor replication with <code>bReplicates</code></li>
+                        <li>Replicate a property with <code>UPROPERTY(Replicated)</code> and <code>GetLifetimeReplicatedProps</code></li>
+                        <li>React to replicated changes with <code>ReplicatedUsing</code> (RepNotify) and an <code>OnRep_</code> function</li>
+                        <li>Explain replication direction and when values arrive</li>
+                        <li>Replicate the <code>UHealthComponent</code> and drive the HUD everywhere</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 60 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#enable" class="toc-link">Enabling Replication</a></li>
+                        <li><a href="#replicated" class="toc-link">Replicating a Property</a></li>
+                        <li><a href="#direction" class="toc-link">Direction &amp; Timing</a></li>
+                        <li><a href="#repnotify" class="toc-link">RepNotify (OnRep)</a></li>
+                        <li><a href="#health" class="toc-link">Replicating Health</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="enable" class="lesson-section">
+                <h2>Enabling Replication</h2>
+                <p>Two switches turn an actor into a networked one, set in the constructor:</p>
+
+                <pre><code class="language-cpp">AEnemy::AEnemy()
+{
+    bReplicates = true;              // this actor exists on clients &amp; syncs
+    // For actors that move under physics/movement and must sync position:
+    SetReplicateMovement(true);      // replicate the transform
+}</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 <code>bReplicates</code> = "this actor is networked"</h4>
+                    <p>With <code>bReplicates = true</code>, the server creates the actor on all clients and keeps replicated properties in sync. <code>SetReplicateMovement</code> additionally syncs the actor's transform (great for simple moving actors; Characters handle their own movement replication via the movement component from Lesson 4.2). Without <code>bReplicates</code>, the actor is server-local — clients never see it.</p>
+                </div>
+            </section>
+
+            <section id="replicated" class="lesson-section">
+                <h2>Replicating a Property</h2>
+                <p>Marking a property replicated takes two pieces: the <code>Replicated</code> specifier on the <code>UPROPERTY</code>, and registering it in <code>GetLifetimeReplicatedProps</code>.</p>
+
+                <pre><code class="language-cpp">// Enemy.h
+#include "Net/UnrealNetwork.h"   // for replication macros (in the .cpp)
+
+UPROPERTY(Replicated)
+float Health = 100.0f;
+
+// Override this to declare which properties replicate:
+virtual void GetLifetimeReplicatedProps(
+    TArray&lt;FLifetimeProperty&gt;&amp; OutLifetimeProps) const override;</code></pre>
+
+                <pre><code class="language-cpp">// Enemy.cpp
+#include "Net/UnrealNetwork.h"
+
+void AEnemy::GetLifetimeReplicatedProps(TArray&lt;FLifetimeProperty&gt;&amp; OutLifetimeProps) const
+{
+    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+    // Register Health for replication. This macro is required.
+    DOREPLIFETIME(AEnemy, Health);
+}</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Both pieces are mandatory</h4>
+                    <p>A <code>UPROPERTY(Replicated)</code> that you forget to register with <code>DOREPLIFETIME</code> won't replicate — and there's no error, just a value that never updates on clients (a classic silent bug). Include <code>Net/UnrealNetwork.h</code> in the <code>.cpp</code>. Now, whenever the <strong>server</strong> changes <code>Health</code>, every client's copy updates automatically. You wrote no send/receive code — the reflection system (Lesson 2.2) does it, the fourth payoff realized.</p>
+                </div>
+
+                <div class="card card-success">
+                    <h4>✅ Conditional replication</h4>
+                    <p>Variants like <code>DOREPLIFETIME_CONDITION(AEnemy, Ammo, COND_OwnerOnly)</code> replicate only to certain clients (e.g. only the owner sees their own ammo) — a bandwidth optimization. Start with plain <code>DOREPLIFETIME</code>; reach for conditions when you need to limit who receives a value.</p>
+                </div>
+            </section>
+
+            <section id="direction" class="lesson-section">
+                <h2>Direction &amp; Timing</h2>
+                <p>Property replication flows in exactly one direction: <strong>server → clients</strong>. Clients never replicate properties up to the server (that's what RPCs are for, Lesson 10.3).</p>
+
+                <div class="mermaid">
+                    graph LR
+                        Srv["SERVER changes Health = 80"] -->|"replicates down"| C1["Client 1: Health becomes 80"]
+                        Srv -->|"replicates down"| C2["Client 2: Health becomes 80"]
+                        C1 -.->|"cannot replicate up"| Srv
+                </div>
+                <figure>
+                    <figcaption>Figure 1: Properties replicate server → clients only. A client changing a replicated property locally is meaningless — it'll be overwritten by the next server update.</figcaption>
+                </figure>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Only change replicated properties on the server</h4>
+                    <p>Setting a replicated property on a client does nothing useful — the value isn't sent up, and the next server replication overwrites it. Always change replicated state inside <code>if (HasAuthority())</code> (Lesson 10.1). Replication is <strong>not instant</strong> either — values arrive over the network with latency and are batched, so don't assume a client sees a change the same frame the server made it.</p>
+                </div>
+            </section>
+
+            <section id="repnotify" class="lesson-section">
+                <h2>RepNotify (OnRep)</h2>
+                <p>Plain replication updates the <em>value</em> silently. Often you want each client to <em>react</em> when it changes — update a health bar, play a hit effect. <code>ReplicatedUsing = OnRep_Fn</code> calls a function on clients whenever the value arrives.</p>
+
+                <pre><code class="language-cpp">// Enemy.h — replicate WITH a notify callback.
+UPROPERTY(ReplicatedUsing = OnRep_Health)
+float Health = 100.0f;
+
+UFUNCTION()
+void OnRep_Health();   // runs on clients when Health replicates in</code></pre>
+
+                <pre><code class="language-cpp">// Enemy.cpp — register it the same way (RepNotify still needs DOREPLIFETIME):
+void AEnemy::GetLifetimeReplicatedProps(TArray&lt;FLifetimeProperty&gt;&amp; Out) const
+{
+    Super::GetLifetimeReplicatedProps(Out);
+    DOREPLIFETIME(AEnemy, Health);
+}
+
+// Called on CLIENTS when the new Health value arrives from the server.
+void AEnemy::OnRep_Health()
+{
+    UE_LOG(LogTemp, Log, TEXT("Health replicated to %.0f"), Health);
+    // Update health bar, play a hit flash, etc. — reacting to the new value.
+    if (Health &lt;= 0.0f) { PlayDeathEffects(); }
+}</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 OnRep runs on clients, not the server</h4>
+                    <p>The <code>OnRep_</code> function fires on <strong>clients</strong> when the replicated value updates — <em>not</em> on the server that changed it. So if the server also needs to react, call your reaction logic directly there too. A common idiom: the server changes <code>Health</code> and calls <code>OnRep_Health()</code> manually to run the same reaction locally, so both server and clients respond consistently. RepNotify is how replicated <em>state</em> becomes reactive <em>events</em> on every client — much like the delegates from Lesson 5.4, but driven by the network.</p>
+                </div>
+            </section>
+
+            <section id="health" class="lesson-section">
+                <h2>Replicating Health</h2>
+                <p>Let's network the <code>UHealthComponent</code> that's threaded through the whole course. Components replicate too — set <code>SetIsReplicatedByDefault(true)</code> and register the property.</p>
+
+                <pre><code class="language-cpp">// HealthComponent.cpp
+UHealthComponent::UHealthComponent()
+{
+    PrimaryComponentTick.bCanEverTick = false;
+    SetIsReplicatedByDefault(true);   // this component replicates
+}
+
+void UHealthComponent::GetLifetimeReplicatedProps(TArray&lt;FLifetimeProperty&gt;&amp; Out) const
+{
+    Super::GetLifetimeReplicatedProps(Out);
+    DOREPLIFETIME(UHealthComponent, CurrentHealth);
+}
+
+bool UHealthComponent::ApplyDamage(float Amount)
+{
+    if (!GetOwner()->HasAuthority()) { return false; }   // server-only (Lesson 10.1)
+
+    CurrentHealth = FMath::Clamp(CurrentHealth - Amount, 0.0f, MaxHealth);
+    OnHealthChanged.Broadcast(CurrentHealth, MaxHealth); // local (server) reaction
+    return CurrentHealth &lt;= 0.0f;
+}</code></pre>
+
+                <pre><code class="language-cpp">// HealthComponent.h — RepNotify so clients fire the SAME event the HUD listens to.
+UPROPERTY(ReplicatedUsing = OnRep_Health, VisibleAnywhere, BlueprintReadOnly)
+float CurrentHealth = 0.0f;
+
+UFUNCTION()
+void OnRep_Health()
+{
+    // On clients, broadcast the same event the HUD (Lesson 9.2) subscribes to.
+    OnHealthChanged.Broadcast(CurrentHealth, MaxHealth);
+}</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ Watch the whole course converge</h4>
+                    <p>The server applies damage (authority, 10.1), <code>CurrentHealth</code> replicates to clients (10.2), each client's <code>OnRep_Health</code> broadcasts <code>OnHealthChanged</code> (5.4), and the HUD widget updates its bar (9.2). One value change flows correctly to every player's screen — and you wrote <em>no</em> manual networking. This is the reward for building on the same patterns all along: they compose into multiplayer almost for free.</p>
+                </div>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: Replicate a door's open state</h3>
+                    <p><strong>Objective:</strong> Replicate state and react on clients.</p>
+                    <ol>
+                        <li>On <code>ADoor</code>, set <code>bReplicates = true</code>.</li>
+                        <li>Add <code>UPROPERTY(ReplicatedUsing = OnRep_IsOpen) bool bIsOpen;</code> and register it in <code>GetLifetimeReplicatedProps</code>.</li>
+                        <li>The server sets <code>bIsOpen</code> (guard with <code>HasAuthority()</code>); in <code>OnRep_IsOpen</code>, play the open/close animation.</li>
+                        <li>Why put the animation in <code>OnRep_IsOpen</code> rather than in the function that sets <code>bIsOpen</code>?</li>
+                    </ol>
+
+                    <details>
+                        <summary>✅ Answer to Q4</summary>
+                        <p>Because the setter runs only on the <em>server</em>, but the animation must play on <em>every client</em>. <code>OnRep_IsOpen</code> fires on each client when the value replicates in, so all players see the door animate. (Call <code>OnRep_IsOpen()</code> manually on the server too, so the host/listen-server player also sees it.)</p>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> Marking <code>UPROPERTY(Replicated)</code> is enough on its own.</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="You must also register it.">A) True</button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — you must also register it in GetLifetimeReplicatedProps with DOREPLIFETIME.">B) False — you must also register it with <code>DOREPLIFETIME</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> Property replication flows in which direction?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — server to clients only.">A) Server → clients only</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Clients don't replicate properties up.">B) Client → server only</button>
+                            <button class="quiz-option" data-correct="false" data-hint="It's one-directional.">C) Both ways automatically</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> An <code>OnRep_</code> function runs on:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — OnRep runs on clients when the value replicates in.">A) Clients, when the replicated value arrives</button>
+                            <button class="quiz-option" data-correct="false" data-hint="The server that changed it doesn't auto-fire OnRep.">B) The server, right after it changes the value</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Not every frame.">C) Every machine, every frame</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li>Enable networking with <code>bReplicates = true</code> (and <code>SetReplicateMovement</code> / <code>SetIsReplicatedByDefault</code> for movement / components).</li>
+                        <li>Replicate a property with <strong>both</strong> <code>UPROPERTY(Replicated)</code> <strong>and</strong> <code>DOREPLIFETIME</code> in <code>GetLifetimeReplicatedProps</code> — miss either and it silently won't sync.</li>
+                        <li>Properties replicate <strong>server → clients only</strong>, with latency — change them on the server (<code>HasAuthority()</code>), never on clients.</li>
+                        <li><code>ReplicatedUsing = OnRep_Fn</code> calls <code>OnRep_</code> on <strong>clients</strong> when the value arrives — how state becomes a reactive event.</li>
+                        <li>Replicating <code>CurrentHealth</code> + broadcasting <code>OnHealthChanged</code> in <code>OnRep</code> drives every client's HUD with no manual net code.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/property-replication-in-unreal-engine" target="_blank" rel="noopener">Property Replication (Epic)</a></li>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/replicate-actor-properties-in-unreal-engine" target="_blank" rel="noopener">Replicating Actor Properties (Epic)</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p>Properties get server state <em>down</em> to clients. Now the other direction — a client asking the server to <em>do</em> something: <strong>RPCs</strong> (Server, Client, Multicast), step 1 of the networking pattern.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Lesson complete!</h3>
+                    <p>State flows to every client. Now let's send commands.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m10_l01_multiplayer_model.html" class="prev-lesson">← Previous: The Multiplayer Model</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m10_l03_rpcs.html" class="next-lesson">Next: RPCs — Server, Client &amp; Multicast →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

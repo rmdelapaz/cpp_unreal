@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Config properties and .ini files in Unreal Engine 5.8 C++: UCLASS(Config), UPROPERTY(Config), the config hierarchy, saving config, and GConfig.">
+    <meta name="author" content="Ray de la Paz">
+    <title>Config Properties &amp; .ini Files — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 7</a></li>
+            <li aria-current="page">Lesson 7.2: Config Properties &amp; .ini Files</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>⚙️ Lesson 7.2: Config Properties &amp; .ini Files</h1>
+                <p class="lead">Some values aren't gameplay content — they're <em>settings</em>: audio volume, difficulty, quality, key bindings, server addresses. These belong in <code>.ini</code> config files, and Unreal can load and save them into your C++ properties automatically. Learn the config system and settings become almost free.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Mark a class and properties for config with <code>UCLASS(Config=...)</code> and <code>UPROPERTY(Config)</code></li>
+                        <li>Explain where config values are read from and the <code>.ini</code> hierarchy</li>
+                        <li>Save changed config back to disk with <code>SaveConfig</code></li>
+                        <li>Choose config vs a DataAsset vs SaveGame for a value</li>
+                        <li>Recognize <code>UDeveloperSettings</code> for project settings pages</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 45 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#what" class="toc-link">What Config Is For</a></li>
+                        <li><a href="#declare" class="toc-link">Declaring Config Properties</a></li>
+                        <li><a href="#hierarchy" class="toc-link">The .ini Hierarchy</a></li>
+                        <li><a href="#saving" class="toc-link">Saving Config</a></li>
+                        <li><a href="#settings" class="toc-link">Developer Settings</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="what" class="lesson-section">
+                <h2>What Config Is For</h2>
+                <p>Config is for <strong>settings that persist between runs but aren't part of a player's save game</strong> — project- or machine-level values. Think of the three persistence tools you'll meet this module as a spectrum:</p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Tool</th><th>Holds</th><th>Lives in</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>DataTable / DataAsset (7.1)</td><td>Gameplay content authored by designers</td><td>Assets in <code>Content/</code></td></tr>
+                            <tr><td><strong>Config (this lesson)</strong></td><td>Settings &amp; tunables, defaults &amp; overrides</td><td><code>.ini</code> files in <code>Config/</code> &amp; <code>Saved/</code></td></tr>
+                            <tr><td>SaveGame (7.3)</td><td>A player's progress</td><td>Save slots on disk</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card card-accent">
+                    <h4>📖 Config vs SaveGame — a real distinction</h4>
+                    <p>Master volume and graphics quality are <strong>config</strong> — they belong to the install/machine and apply across all saves. A player's level, inventory, and quest progress are <strong>SaveGame</strong> — per playthrough. Don't put progress in config or settings in a save; the confusion causes real bugs.</p>
+                </div>
+            </section>
+
+            <section id="declare" class="lesson-section">
+                <h2>Declaring Config Properties</h2>
+                <p>Mark the class with <code>Config=&lt;FileName&gt;</code> and each persisted property with <code>Config</code>. Unreal reads the values from the matching <code>.ini</code> at load.</p>
+
+                <pre><code class="language-cpp">// GameSettings.h
+UCLASS(Config = Game)   // reads/writes DefaultGame.ini / Saved Game.ini
+class MYPROJECT_API UGameSettings : public UObject
+{
+    GENERATED_BODY()
+
+public:
+    // 'Config' marks this property as loaded from / saved to the ini file.
+    UPROPERTY(Config, EditAnywhere, Category = "Audio")
+    float MasterVolume = 1.0f;
+
+    UPROPERTY(Config, EditAnywhere, Category = "Gameplay")
+    int32 Difficulty = 1;
+
+    UPROPERTY(Config, EditAnywhere, Category = "Gameplay")
+    bool bShowTutorials = true;
+};</code></pre>
+
+                <p>The corresponding <code>.ini</code> section is keyed by <code>[Package.Class]</code>:</p>
+
+                <pre><code class="language-ini"># In Config/DefaultGame.ini
+[/Script/MyProject.GameSettings]
+MasterVolume=0.8
+Difficulty=2
+bShowTutorials=False</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ The value is only read if the property is <code>Config</code></h4>
+                    <p>A property without the <code>Config</code> specifier is ignored by the ini, even if the class is <code>Config=Game</code>. Both pieces are required: the class chooses the file, each property opts in. The common config value types — numbers, bools, <code>FString</code>, enums, and arrays — all serialize to ini text.</p>
+                </div>
+            </section>
+
+            <section id="hierarchy" class="lesson-section">
+                <h2>The .ini Hierarchy</h2>
+                <p>Config isn't one file — it's a <strong>layered hierarchy</strong>, where later layers override earlier ones. This is what lets a project ship defaults while a player's machine keeps personal overrides.</p>
+
+                <div class="mermaid">
+                    graph TD
+                        Base["Engine base config<br/>(engine defaults)"] --> Proj["Config/DefaultGame.ini<br/>(your project defaults — committed)"]
+                        Proj --> Plat["Platform overrides<br/>(Windows/Mac/...)"]
+                        Plat --> User["Saved/Config/.../Game.ini<br/>(per-user, generated — not committed)"]
+                </div>
+                <figure>
+                    <figcaption>Figure 1: Config layers, each overriding the last. You commit <code>Config/DefaultGame.ini</code> (project defaults); the per-user file in <code>Saved/</code> is generated and holds runtime changes.</figcaption>
+                </figure>
+
+                <div class="card card-success">
+                    <h4>✅ Why the split matters for source control</h4>
+                    <p>Recall Lesson 1.2/1.3: <code>Config/</code> is committed, <code>Saved/</code> is not. Your project's default settings live in committed <code>DefaultGame.ini</code>; each player's changed settings land in the generated <code>Saved/</code> ini. So shipping a new default doesn't stomp a player's saved override — the hierarchy resolves it. This is the same generated-vs-committed line you set up in your <code>.gitignore</code>.</p>
+                </div>
+            </section>
+
+            <section id="saving" class="lesson-section">
+                <h2>Saving Config</h2>
+                <p>Reading happens automatically at load. To <em>persist a change</em> the player made (they turned the volume down), call <code>SaveConfig</code> — it writes the <code>Config</code> properties back to the per-user ini.</p>
+
+                <pre><code class="language-cpp">void UGameSettings::SetMasterVolume(float NewVolume)
+{
+    MasterVolume = FMath::Clamp(NewVolume, 0.0f, 1.0f);
+    SaveConfig();   // persist to the per-user ini so it survives a restart
+}</code></pre>
+
+                <p>For direct, ad-hoc access to any ini value, the global <code>GConfig</code> object is available — useful for reading a one-off value without a config class:</p>
+
+                <pre><code class="language-cpp">float Volume = 1.0f;
+GConfig->GetFloat(
+    TEXT("/Script/MyProject.GameSettings"), TEXT("MasterVolume"),
+    Volume, GGameIni);
+// GGameIni is the resolved path to the active Game.ini.</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ SaveConfig writes to the per-user file, not your defaults</h4>
+                    <p><code>SaveConfig</code> persists to the generated <code>Saved/</code> ini — it does <em>not</em> edit your committed <code>DefaultGame.ini</code>. That's correct: runtime changes are the player's, not the project's. If you want to change a shipped default, edit <code>DefaultGame.ini</code> in the editor's Project Settings or by hand.</p>
+                </div>
+            </section>
+
+            <section id="settings" class="lesson-section">
+                <h2>Developer Settings</h2>
+                <p>For settings you want to appear as a page in <strong>Project Settings</strong> (or Editor Preferences), subclass <code>UDeveloperSettings</code>. It's a config class that Unreal automatically surfaces in the settings UI and makes globally accessible.</p>
+
+                <pre><code class="language-cpp">#include "Engine/DeveloperSettings.h"
+
+UCLASS(Config = Game, DefaultConfig, meta = (DisplayName = "My Game Settings"))
+class MYPROJECT_API UMyGameSettings : public UDeveloperSettings
+{
+    GENERATED_BODY()
+
+public:
+    UPROPERTY(Config, EditAnywhere, Category = "Gameplay")
+    float DefaultDifficultyScale = 1.0f;
+
+    // Reach it anywhere:
+    static const UMyGameSettings* Get()
+    {
+        return GetDefault&lt;UMyGameSettings&gt;();
+    }
+};</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ When to reach for it</h4>
+                    <p><code>UDeveloperSettings</code> is ideal for <strong>project-wide tunables</strong> a developer sets in Project Settings — a global difficulty scale, feature flags, default classes. <code>DefaultConfig</code> makes edits save to <code>DefaultGame.ini</code> (committed project defaults). Access the read-only defaults anywhere with <code>GetDefault&lt;T&gt;()</code>. It's the modern replacement for scattering globals and magic numbers through code.</p>
+                </div>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: An options object</h3>
+                    <p><strong>Objective:</strong> Build a persistable settings class.</p>
+                    <ol>
+                        <li>Create <code>UPlayerOptions : public UObject</code> with <code>UCLASS(Config = Game)</code>.</li>
+                        <li>Add <code>Config</code> properties: <code>float SfxVolume</code>, <code>float MusicVolume</code>, <code>bool bInvertY</code>, <code>int32 GraphicsQuality</code>.</li>
+                        <li>Write setters that clamp and call <code>SaveConfig()</code>.</li>
+                        <li>Explain why <code>GraphicsQuality</code> belongs in config, not in a SaveGame.</li>
+                    </ol>
+
+                    <details>
+                        <summary>✅ Answer</summary>
+                        <p>Graphics quality is a machine/install setting shared across all playthroughs and players on that PC — it's not part of any single save's progress. Putting it in config means it applies globally and persists independent of which save is loaded. A SaveGame would wrongly tie it to one playthrough.</p>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> What two things must be marked for a property to persist to an ini?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — the class needs Config=File and the property needs the Config specifier.">A) <code>UCLASS(Config=...)</code> on the class AND <code>UPROPERTY(Config)</code> on the property</button>
+                            <button class="quiz-option" data-correct="false" data-hint="EditAnywhere alone doesn't persist to ini.">B) Just <code>EditAnywhere</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="Replication is unrelated.">C) <code>Replicated</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> A player lowers the music volume at runtime. To make it stick, call:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — SaveConfig writes Config properties to the per-user ini.">A) <code>SaveConfig()</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="That's for save games.">B) <code>SaveGameToSlot()</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="Nothing auto-persists runtime changes.">C) Nothing — it persists automatically</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> Which value belongs in config rather than a SaveGame?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — graphics quality is a machine setting shared across saves.">A) Graphics quality level</button>
+                            <button class="quiz-option" data-correct="false" data-hint="That's per-playthrough progress.">B) The player's current level and XP</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Inventory is progress → SaveGame.">C) The player's inventory contents</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li>Config is for <strong>settings that persist between runs but aren't save-game progress</strong> (volume, quality, difficulty defaults).</li>
+                        <li>Mark the class <code>UCLASS(Config=Game)</code> and each persisted field <code>UPROPERTY(Config)</code> — both are required.</li>
+                        <li>Config is a <strong>layered hierarchy</strong>: committed <code>Config/DefaultGame.ini</code> defaults, overridden by the generated per-user <code>Saved/</code> ini.</li>
+                        <li>Reading is automatic at load; call <strong><code>SaveConfig()</code></strong> to persist a runtime change (to the per-user file). <code>GConfig</code> gives ad-hoc access.</li>
+                        <li><strong><code>UDeveloperSettings</code></strong> surfaces project-wide settings in the Project Settings UI, accessible via <code>GetDefault&lt;T&gt;()</code>.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/configuration-files-in-unreal-engine" target="_blank" rel="noopener">Configuration Files (Epic)</a></li>
+                    <li><a href="https://benui.ca/unreal/uclass/#config" target="_blank" rel="noopener">BenUI — UCLASS Config specifiers</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p>Config persists settings. Next we persist the thing players care about most — their <em>progress</em>. <strong>SaveGame</strong>: writing and reading a save slot so a player can pick up where they left off.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Lesson complete!</h3>
+                    <p>Settings persist. Now let's save the player's whole journey.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m07_l01_datatables_and_dataassets.html" class="prev-lesson">← Previous: DataTables &amp; DataAssets in C++</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m07_l03_savegame.html" class="next-lesson">Next: Saving &amp; Loading with SaveGame →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Traces and spatial queries in Unreal Engine 5.8 C++: line traces, sweeps, FHitResult, trace channels vs object types, query params, and visualizing with debug draws.">
+    <meta name="author" content="Ray de la Paz">
+    <title>Traces &amp; Spatial Queries — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 5</a></li>
+            <li aria-current="page">Lesson 5.2: Traces &amp; Spatial Queries</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>🎯 Lesson 5.2: Traces &amp; Spatial Queries</h1>
+                <p class="lead">A trace fires an invisible ray (or shape) through the world and reports what it hits. It's how you do hitscan weapons, line-of-sight checks, "what am I looking at," ground detection, and interaction prompts. Master traces and a huge category of gameplay opens up.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Perform a line trace with <code>LineTraceSingleByChannel</code></li>
+                        <li>Read results from <code>FHitResult</code> (actor, location, normal, component)</li>
+                        <li>Use <code>FCollisionQueryParams</code> to ignore the instigator</li>
+                        <li>Distinguish trace <em>by channel</em> from <em>by object type</em>, and single vs multi</li>
+                        <li>Perform a shape sweep and visualize traces with debug draws</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 60 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#what" class="toc-link">What a Trace Is</a></li>
+                        <li><a href="#linetrace" class="toc-link">The Line Trace</a></li>
+                        <li><a href="#hitresult" class="toc-link">Reading FHitResult</a></li>
+                        <li><a href="#params" class="toc-link">Query Params &amp; Ignoring Self</a></li>
+                        <li><a href="#variants" class="toc-link">Channel vs Object, Single vs Multi, Sweeps</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="what" class="lesson-section">
+                <h2>What a Trace Is</h2>
+                <p>A trace is a query: "starting <em>here</em>, going <em>there</em>, what do I hit?" The engine walks the ray against collision and returns hit information. Unlike overlaps (Lesson 5.1), a trace happens <em>on demand</em> — you call it exactly when you want an answer.</p>
+
+                <div class="mermaid">
+                    graph LR
+                        Start["Start point<br/>(e.g. camera / muzzle)"] -->|"ray"| End["End point<br/>(Start + Direction * Range)"]
+                        End --> Hit["FHitResult:<br/>did we hit? what? where?"]
+                </div>
+                <figure>
+                    <figcaption>Figure 1: A line trace from Start to End. The engine reports the first blocking hit along the way in an <code>FHitResult</code>.</figcaption>
+                </figure>
+
+                <div class="card card-accent">
+                    <h4>📖 Traces respect collision responses</h4>
+                    <p>A trace uses the same channel system as Lesson 5.1. Tracing "by the Visibility channel" hits things set to <em>block</em> Visibility. This is why collision setup and traces are one topic: a wall that blocks Visibility stops a line-of-sight trace; one that ignores it doesn't. Custom trace channels (Project Settings) let you make gameplay-specific queries like an "Interaction" trace.</p>
+                </div>
+            </section>
+
+            <section id="linetrace" class="lesson-section">
+                <h2>The Line Trace</h2>
+                <p>The workhorse is <code>UWorld::LineTraceSingleByChannel</code>. A "what am I looking at" trace from the camera:</p>
+
+                <pre><code class="language-cpp">bool AMyCharacter::TraceFromCamera(FHitResult&amp; OutHit, float Range) const
+{
+    // Build the ray from the camera's viewpoint.
+    const FVector Start = Camera->GetComponentLocation();
+    const FVector End   = Start + Camera->GetForwardVector() * Range;
+
+    FCollisionQueryParams Params;
+    Params.AddIgnoredActor(this);   // don't hit ourselves (next section)
+
+    // Trace against the Visibility channel; fills OutHit; returns true if blocked.
+    const bool bHit = GetWorld()->LineTraceSingleByChannel(
+        OutHit, Start, End, ECC_Visibility, Params);
+
+    // Visualize it (Lesson 2.6): green line, red hit point.
+    DrawDebugLine(GetWorld(), Start, End, bHit ? FColor::Red : FColor::Green, false, 1.0f);
+    if (bHit)
+    {
+        DrawDebugPoint(GetWorld(), OutHit.ImpactPoint, 12.0f, FColor::Red, false, 1.0f);
+    }
+
+    return bHit;
+}</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ The signature pattern</h4>
+                    <p>Trace functions return a <code>bool</code> (did it hit a blocker?) and fill an <strong>out-parameter</strong> <code>FHitResult&amp;</code> — the by-reference out-param idiom from Lesson 1.4. The debug draw is the payoff of Lesson 2.6: you can literally <em>see</em> the ray, which turns "why isn't this hitting?" into an obvious picture.</p>
+                </div>
+            </section>
+
+            <section id="hitresult" class="lesson-section">
+                <h2>Reading FHitResult</h2>
+                <p><code>FHitResult</code> is a rich struct. The fields you'll use most:</p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Field</th><th>What it gives you</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>GetActor()</code></td><td>The actor that was hit (may be null on no-hit)</td></tr>
+                            <tr><td><code>GetComponent()</code></td><td>The specific component hit</td></tr>
+                            <tr><td><code>ImpactPoint</code></td><td>World location where the ray struck</td></tr>
+                            <tr><td><code>ImpactNormal</code></td><td>Surface normal at the hit (for decals, ricochets)</td></tr>
+                            <tr><td><code>Distance</code></td><td>How far along the ray the hit was</td></tr>
+                            <tr><td><code>bBlockingHit</code></td><td>Whether it was a blocking hit</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <pre><code class="language-cpp">FHitResult Hit;
+if (TraceFromCamera(Hit, 5000.0f))
+{
+    AActor* HitActor = Hit.GetActor();
+    if (IsValid(HitActor))
+    {
+        // Damage anything with a health component (composition again, Lesson 3.5):
+        if (UHealthComponent* Health = HitActor->FindComponentByClass&lt;UHealthComponent&gt;())
+        {
+            Health->ApplyDamage(25.0f);
+        }
+        // Spawn an impact effect oriented to the surface:
+        // ...use Hit.ImpactPoint and Hit.ImpactNormal...
+    }
+}</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Always check the actor is valid</h4>
+                    <p>Even when a trace hits, <code>GetActor()</code> can be null (you can hit world geometry that isn't an actor), and the actor could be mid-destruction. Guard with <code>IsValid()</code> before dereferencing — the same discipline from Module 2, now in a hot combat path where a crash is very visible.</p>
+                </div>
+            </section>
+
+            <section id="params" class="lesson-section">
+                <h2>Query Params &amp; Ignoring Self</h2>
+                <p>By default a trace from your own actor might hit <em>your own collision</em> first — you'd shoot yourself. <code>FCollisionQueryParams</code> tunes the query; the most important use is ignoring actors.</p>
+
+                <pre><code class="language-cpp">FCollisionQueryParams Params;
+Params.AddIgnoredActor(this);              // ignore the shooter
+Params.AddIgnoredActor(GetOwner());        // and its owner, e.g. for a weapon
+Params.bTraceComplex = false;              // trace simple collision (faster)
+Params.bReturnPhysicalMaterial = true;     // get surface type (footsteps, decals)
+
+GetWorld()->LineTraceSingleByChannel(OutHit, Start, End, ECC_Visibility, Params);</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 Simple vs complex collision</h4>
+                    <p><code>bTraceComplex = false</code> traces against the cheap simplified collision shape; <code>true</code> traces the actual triangle mesh — more accurate but slower. Use simple for gameplay traces you do often (like every shot), and complex only when you need per-triangle precision (like a sniper hitting a specific mesh detail).</p>
+                </div>
+            </section>
+
+            <section id="variants" class="lesson-section">
+                <h2>Channel vs Object, Single vs Multi, Sweeps</h2>
+                <p>Traces come in a matrix of variants. You'll reach for different ones by situation:</p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Variant</th><th>Use when</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>...ByChannel</code></td><td>"Hit whatever blocks this channel" (line of sight, shots)</td></tr>
+                            <tr><td><code>...ByObjectType</code></td><td>"Hit only these object types" (only pawns, only physics bodies)</td></tr>
+                            <tr><td><code>...Single...</code></td><td>You want the <em>first</em> blocking hit</td></tr>
+                            <tr><td><code>...Multi...</code></td><td>You want <em>all</em> hits along the ray (piercing shots)</td></tr>
+                            <tr><td><code>Sweep...</code></td><td>Trace a <em>shape</em> (sphere/box/capsule), not a thin line</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <p>A sphere sweep — useful for "forgiving" aim or a thick projectile — passes a shape:</p>
+
+                <pre><code class="language-cpp">FHitResult Hit;
+const FVector Start = GetActorLocation();
+const FVector End   = Start + GetActorForwardVector() * 1000.0f;
+
+// A 30-unit radius sphere swept along the ray — easier to land than a thin line.
+GetWorld()->SweepSingleByChannel(
+    Hit, Start, End, FQuat::Identity, ECC_Visibility,
+    FCollisionShape::MakeSphere(30.0f));
+
+DrawDebugSphere(GetWorld(), End, 30.0f, 16, FColor::Cyan, false, 1.0f);</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Don't trace every frame carelessly</h4>
+                    <p>Traces are cheaper than iterating all actors, but a <code>Multi</code> complex trace every <code>Tick</code> on many actors still adds up. Trace on <em>events</em> (a shot, an interaction press) where you can; when you must trace continuously (an interaction prompt), keep it a single simple trace and consider doing it a few times per second rather than every frame.</p>
+                </div>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: An interaction tracer</h3>
+                    <p><strong>Objective:</strong> Build the "what am I looking at" query used for interaction prompts.</p>
+                    <ol>
+                        <li>Write <code>AActor* GetLookedAtActor(float Range) const</code> on your character.</li>
+                        <li>Line-trace from the camera forward by <code>Range</code> on <code>ECC_Visibility</code>, ignoring self.</li>
+                        <li>Return <code>Hit.GetActor()</code> if valid, else <code>nullptr</code>.</li>
+                        <li>Draw the debug line so you can see it. (In Lesson 5.5 you'll ask the returned actor "are you interactable?" via an interface.)</li>
+                    </ol>
+
+                    <details>
+                        <summary>✅ Reference</summary>
+                        <pre><code class="language-cpp">AActor* AMyCharacter::GetLookedAtActor(float Range) const
+{
+    const FVector Start = Camera->GetComponentLocation();
+    const FVector End   = Start + Camera->GetForwardVector() * Range;
+
+    FCollisionQueryParams Params;
+    Params.AddIgnoredActor(this);
+
+    FHitResult Hit;
+    const bool bHit = GetWorld()->LineTraceSingleByChannel(
+        Hit, Start, End, ECC_Visibility, Params);
+    DrawDebugLine(GetWorld(), Start, End, FColor::Yellow, false, 0.1f);
+
+    return (bHit &amp;&amp; IsValid(Hit.GetActor())) ? Hit.GetActor() : nullptr;
+}</code></pre>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> What does a single line trace return and fill?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — returns a bool (hit?) and fills an FHitResult out-param.">A) A <code>bool</code>, and fills an <code>FHitResult&amp;</code> out-parameter</button>
+                            <button class="quiz-option" data-correct="false" data-hint="It doesn't return the actor directly.">B) The hit actor directly</button>
+                            <button class="quiz-option" data-correct="false" data-hint="No array for a single trace.">C) An array of all actors in the level</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> How do you stop a trace from hitting the actor that fired it?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — AddIgnoredActor(this) in FCollisionQueryParams.">A) <code>Params.AddIgnoredActor(this)</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="Disabling collision would break other things.">B) Disable the actor's collision first</button>
+                            <button class="quiz-option" data-correct="false" data-hint="No such flag solves this.">C) <code>bIgnoreSelf = true</code> on the actor</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> You want a piercing shot that hits <em>every</em> target along the ray. Use a:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="Single stops at the first blocker.">A) <code>...SingleByChannel</code></button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — Multi returns all hits along the ray.">B) <code>...MultiByChannel</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="Overlaps aren't on-demand rays.">C) An overlap event</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li>A <strong>trace</strong> is an on-demand query — "from here to there, what do I hit?" — respecting the same channels as collision.</li>
+                        <li><code>LineTraceSingleByChannel</code> returns a <code>bool</code> and fills an <code>FHitResult&amp;</code>; read <code>GetActor</code>, <code>ImpactPoint</code>, <code>ImpactNormal</code>, <code>Distance</code>.</li>
+                        <li>Use <code>FCollisionQueryParams</code> to <code>AddIgnoredActor(this)</code> and pick simple vs complex collision.</li>
+                        <li>Variants: <strong>ByChannel</strong> vs <strong>ByObjectType</strong>, <strong>Single</strong> vs <strong>Multi</strong>, and <strong>Sweep</strong> for shapes.</li>
+                        <li>Trace on events when possible; visualize with <code>DrawDebug*</code> to debug spatial logic.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/traces-with-raycasts-in-unreal-engine" target="_blank" rel="noopener">Traces / Raycasts (Epic)</a></li>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/API/Runtime/Engine/Engine/FHitResult" target="_blank" rel="noopener">FHitResult API (Epic)</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p>Detection and queries are covered. Now the dimension of <em>time</em>: delays, cooldowns, repeating effects — the <strong>timer</strong> system, which lets you schedule work without polling every frame in <code>Tick</code>.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Lesson complete!</h3>
+                    <p>You can query space. Next, schedule across time.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m05_l01_collision_overlap_hit.html" class="prev-lesson">← Previous: Collision, Overlaps &amp; Hit Events</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m05_l03_timers_and_latent_actions.html" class="next-lesson">Next: Timers &amp; Latent Actions →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

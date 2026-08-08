@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Profiling and optimization in Unreal Engine 5.8 C++: Unreal Insights, stat commands, custom stat scopes, and practical optimization patterns like avoiding Tick and caching.">
+    <meta name="author" content="Ray de la Paz">
+    <title>Profiling &amp; Optimization — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 11</a></li>
+            <li aria-current="page">Lesson 11.2: Profiling &amp; Optimization</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>📊 Lesson 11.2: Profiling with Unreal Insights &amp; Optimization</h1>
+                <p class="lead">The golden rule of performance: <strong>measure, don't guess</strong>. Programmers' intuitions about what's slow are famously wrong. This lesson shows you how to <em>find</em> the real bottlenecks with Unreal's profiling tools, then the optimization patterns that reliably help — so your effort lands where it counts.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Use <code>stat</code> console commands to see where frame time goes</li>
+                        <li>Capture and read a trace in Unreal Insights</li>
+                        <li>Add custom profiling scopes to your own C++</li>
+                        <li>Apply the highest-impact optimization patterns</li>
+                        <li>Follow a measure → fix → re-measure workflow</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 60 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#measure" class="toc-link">Measure First</a></li>
+                        <li><a href="#stat" class="toc-link">stat Commands</a></li>
+                        <li><a href="#insights" class="toc-link">Unreal Insights</a></li>
+                        <li><a href="#customscopes" class="toc-link">Profiling Your Code</a></li>
+                        <li><a href="#patterns" class="toc-link">Optimization Patterns</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="measure" class="lesson-section">
+                <h2>Measure First</h2>
+                <p>Before optimizing anything, you must know <em>what</em> is slow and <em>where</em> the time goes. Optimizing by hunch wastes effort on code that wasn't the problem — and often adds bugs. The workflow is a loop:</p>
+
+                <div class="mermaid">
+                    graph LR
+                        M["Measure<br/>(find the real bottleneck)"] --> F["Fix<br/>(optimize that one thing)"]
+                        F --> R["Re-measure<br/>(confirm it helped)"]
+                        R --> M
+                </div>
+                <figure>
+                    <figcaption>Figure 1: Measure → fix → re-measure. Every optimization is validated by measurement, so you never ship a "fix" that didn't actually help — or that made things worse.</figcaption>
+                </figure>
+
+                <div class="card card-accent">
+                    <h4>📖 Frame budget thinking</h4>
+                    <p>A target of 60&nbsp;FPS means each frame has ~16.6&nbsp;ms; 30&nbsp;FPS means ~33&nbsp;ms. That total is split across the game thread, render thread, and GPU. Optimization is about fitting within that budget. Knowing your budget turns "make it faster" into a concrete goal: "get the game thread under 16&nbsp;ms."</p>
+                </div>
+            </section>
+
+            <section id="stat" class="lesson-section">
+                <h2>stat Commands</h2>
+                <p>The fastest first look is the <code>stat</code> console commands (open the console with <kbd>~</kbd> and type them). They overlay live timing on the running game.</p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Command</th><th>Shows</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>stat fps</code></td><td>Frame rate and frame time</td></tr>
+                            <tr><td><code>stat unit</code></td><td>Frame / Game / Draw (render) / GPU times — <em>where the frame goes</em></td></tr>
+                            <tr><td><code>stat game</code></td><td>Breakdown of game-thread time by system</td></tr>
+                            <tr><td><code>stat gpu</code></td><td>GPU cost by pass</td></tr>
+                            <tr><td><code>stat startfile</code> / <code>stopfile</code></td><td>Record a stats capture for later analysis</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card card-success">
+                    <h4>✅ Start with <code>stat unit</code></h4>
+                    <p><code>stat unit</code> tells you which thread is the bottleneck: is <strong>Game</strong> high (your C++/gameplay), <strong>Draw</strong> high (too many draw calls), or <strong>GPU</strong> high (shaders/overdraw)? This one command aims your whole investigation. If Game is the problem, this course's optimizations apply; if GPU is, it's an art/rendering issue instead. Never optimize the game thread when the GPU is your bottleneck.</p>
+                </div>
+            </section>
+
+            <section id="insights" class="lesson-section">
+                <h2>Unreal Insights</h2>
+                <p>For deep analysis, <strong>Unreal Insights</strong> is the modern profiler. You capture a <em>trace</em> while the game runs, then explore it in a timeline that shows exactly which functions took how long, frame by frame.</p>
+
+                <pre><code class="language-text"># Launch with tracing enabled, or from the console:
+Trace.Start
+# ...play the slow scenario...
+Trace.Stop
+# Then open UnrealInsights.exe and load the .utrace file.</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 What Insights shows you</h4>
+                    <p>A hierarchical timeline: each frame, each thread, and the nested scopes within — so a single tall bar reveals the exact function eating your frame. It surfaces things <code>stat</code> can't: intermittent spikes, a function called far more than expected, or a stall waiting on a lock. Insights turns "the game hitches sometimes" into "this function spiked to 12&nbsp;ms on frame 4213." That specificity is what makes a fix possible.</p>
+                </div>
+
+                <div class="card card-success">
+                    <h4>✅ Profile a Development build, not Debug</h4>
+                    <p>Recall build configurations (Lesson 8.1): profile in <strong>Development</strong> (or Test/Shipping-like), not Debug — Debug's disabled optimizations make timings meaningless. And profile the <em>actual slow scenario</em> (the crowded battle, the big level), not an idle menu. You optimize what you measure, so measure the right thing.</p>
+                </div>
+            </section>
+
+            <section id="customscopes" class="lesson-section">
+                <h2>Profiling Your Code</h2>
+                <p>To see <em>your</em> functions by name in <code>stat</code> and Insights, add profiling scopes. A one-line macro times the enclosing scope and labels it.</p>
+
+                <pre><code class="language-cpp">void AAIManager::UpdateAllAgents()
+{
+    // Times this whole function and shows it in Insights / stat, labeled.
+    TRACE_CPUPROFILER_EVENT_SCOPE(AAIManager::UpdateAllAgents);
+
+    for (AAIAgent* Agent : Agents)
+    {
+        // A nested scope to break down the cost further:
+        TRACE_CPUPROFILER_EVENT_SCOPE(Agent_Think);
+        Agent->Think();
+    }
+}
+
+// For a stat that shows under a named group in `stat MyGame`:
+DECLARE_CYCLE_STAT(TEXT("Pathfinding"), STAT_Pathfinding, STATGROUP_Game);
+void AAIAgent::FindPath()
+{
+    SCOPE_CYCLE_COUNTER(STAT_Pathfinding);   // adds Pathfinding to the stat overlay
+    // ...expensive pathfinding...
+}</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ Instrument your hot paths</h4>
+                    <p>Drop <code>TRACE_CPUPROFILER_EVENT_SCOPE</code> into functions you suspect are heavy — AI updates, procedural generation, complex <code>Tick</code>s. Then Insights shows them by name instead of as anonymous time. These macros compile out in Shipping, so leave them in; they cost nothing in the shipped game and save you hours next time you profile.</p>
+                </div>
+            </section>
+
+            <section id="patterns" class="lesson-section">
+                <h2>Optimization Patterns</h2>
+                <p>Once you've found the bottleneck, these patterns reliably help. Several are things the course has already steered you toward:</p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Pattern</th><th>Why it helps</th><th>Course link</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><strong>Avoid Tick / disable it</strong></td><td>An actor not ticking costs nothing; use events &amp; timers instead</td><td>3.2, 5.3, 9.2</td></tr>
+                            <tr><td><strong>Tick less often</strong></td><td><code>SetActorTickInterval</code> — tick 5×/sec, not 60×</td><td>—</td></tr>
+                            <tr><td><strong>Cache, don't search</strong></td><td>Don't <code>GetAllActorsOfClass</code> each frame — register once, keep a list</td><td>3.4</td></tr>
+                            <tr><td><strong>Reserve containers</strong></td><td><code>TArray::Reserve</code> avoids repeated reallocation</td><td>2.4</td></tr>
+                            <tr><td><strong>Object pooling</strong></td><td>Reuse projectiles/effects instead of spawn/destroy churn</td><td>3.4</td></tr>
+                            <tr><td><strong>Move heavy work off-thread</strong></td><td>Keep the game thread inside budget</td><td>11.1</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <pre><code class="language-cpp">// Tick less often — a slow-updating actor doesn't need 60 Hz:
+PrimaryActorTick.TickInterval = 0.2f;   // ~5 times/sec instead of every frame
+
+// Reserve when you know the size — avoids reallocations (Lesson 2.4):
+TArray&lt;FVector&gt; Points;
+Points.Reserve(ExpectedCount);          // one allocation, not many
+for (int32 i = 0; i &lt; ExpectedCount; ++i) { Points.Add(Compute(i)); }</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ The biggest win is usually "stop doing it every frame"</h4>
+                    <p>The single most common Unreal performance fix is <strong>reducing Tick work</strong> — disabling Tick on actors that don't need it, raising the tick interval, or replacing per-frame polling with events (the pattern this course has pushed since Lesson 3.5). The "cache, don't search each frame" rule from Lesson 3.4 is the same idea. If <code>stat game</code> points at your gameplay, look for per-frame work that doesn't need to be per-frame first.</p>
+                </div>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: Diagnose a hitch</h3>
+                    <p><strong>Objective:</strong> Apply the measure-first workflow.</p>
+                    <ol>
+                        <li>The game runs at 40&nbsp;FPS in a big battle. What's the first console command you run, and what does each result (high Game vs high GPU) tell you to do?</li>
+                        <li>Say <code>stat game</code> points at an AI manager. How do you get its functions to appear by name in Insights?</li>
+                        <li>You find it calls <code>GetAllActorsOfClass</code> every frame. Name the two optimizations from the table that apply.</li>
+                        <li>After fixing, what's the final step you must not skip?</li>
+                    </ol>
+
+                    <details>
+                        <summary>✅ Answers</summary>
+                        <ul>
+                            <li><strong>1.</strong> <code>stat unit</code>. High <strong>Game</strong> → optimize C++/gameplay (this course); high <strong>GPU</strong> → it's rendering/art, not your gameplay code.</li>
+                            <li><strong>2.</strong> Add <code>TRACE_CPUPROFILER_EVENT_SCOPE</code> (or a cycle-stat counter) to its functions, then capture a trace.</li>
+                            <li><strong>3.</strong> "Cache, don't search" (register actors once, keep a list — Lesson 3.4) and "avoid/reduce Tick" (don't do it every frame).</li>
+                            <li><strong>4.</strong> <strong>Re-measure</strong> to confirm the fix actually helped.</li>
+                        </ul>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> The first principle of performance work is:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — measure to find the real bottleneck before optimizing.">A) Measure first — find the real bottleneck before optimizing</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Guessing wastes effort and adds bugs.">B) Optimize whatever looks complex</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Threading isn't a blanket fix.">C) Thread everything</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> Which command tells you if the bottleneck is Game, Draw, or GPU?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — stat unit breaks down frame time by thread/GPU.">A) <code>stat unit</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="That's just frame rate.">B) <code>stat fps</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="Not a stat command.">C) <code>show collision</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> The most common Unreal game-thread optimization is:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — reduce per-frame Tick work (disable, interval, or events).">A) Reducing per-frame Tick work (disable Tick, raise interval, use events)</button>
+                            <button class="quiz-option" data-correct="false" data-hint="More logging slows things down.">B) Adding more <code>UE_LOG</code> calls</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Ticking more is worse.">C) Ticking every actor more often</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li><strong>Measure → fix → re-measure</strong> — never optimize by guess; validate every change with data.</li>
+                        <li>Start with <code>stat unit</code> to find whether <strong>Game</strong>, <strong>Draw</strong>, or <strong>GPU</strong> is the bottleneck, then drill in with <code>stat game</code> / <strong>Unreal Insights</strong>.</li>
+                        <li>Instrument your hot paths with <code>TRACE_CPUPROFILER_EVENT_SCOPE</code> / cycle stats (they compile out of Shipping) and profile a <strong>Development</strong> build of the real slow scenario.</li>
+                        <li>Highest-impact patterns: <strong>avoid/reduce Tick</strong>, <strong>cache instead of searching each frame</strong>, <strong>reserve containers</strong>, <strong>pool objects</strong>, <strong>offload heavy work</strong> (11.1).</li>
+                        <li>Most game-thread wins come from <strong>not doing work every frame</strong> — the event-driven habit this whole course has taught.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-insights-in-unreal-engine" target="_blank" rel="noopener">Unreal Insights (Epic)</a></li>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/stat-commands-in-unreal-engine" target="_blank" rel="noopener">Stat Commands Reference (Epic)</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p><strong>Module 11 is complete</strong> — and with it, all the foundations. Only one thing remains: the <strong>Capstone</strong>, where you build a complete C++ gameplay feature that pulls together interop, data, persistence, UI, and networking into one shippable system. Everything has led here.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Module 11 complete!</h3>
+                    <p>You can find and fix what's slow. Time for the capstone.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m11_l01_async_and_multithreading.html" class="prev-lesson">← Previous: Async &amp; Multithreading</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m12_l01_capstone_cpp_gameplay_feature.html" class="next-lesson">Next: Capstone — A Complete C++ Gameplay Feature →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

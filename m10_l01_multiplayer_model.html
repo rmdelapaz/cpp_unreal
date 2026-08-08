@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="The Unreal Engine 5.8 multiplayer model in C++: client-server architecture, authority and HasAuthority, network roles, ownership, and net modes.">
+    <meta name="author" content="Ray de la Paz">
+    <title>The Multiplayer Model — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 10</a></li>
+            <li aria-current="page">Lesson 10.1: The Multiplayer Model</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>🌐 Lesson 10.1: The Multiplayer Model — Roles, Ownership &amp; Authority</h1>
+                <p class="lead">Networking is where many Unreal programmers stall — not because it's hard code, but because the <em>mental model</em> is unfamiliar. Master three ideas — authority, roles, and ownership — and the rest is syntax. This lesson builds that model and cashes in every "server-only" hint the course has dropped.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Explain Unreal's client-server architecture and server authority</li>
+                        <li>Check authority with <code>HasAuthority()</code> and branch code accordingly</li>
+                        <li>Identify the network roles (<code>Authority</code>, <code>AutonomousProxy</code>, <code>SimulatedProxy</code>)</li>
+                        <li>Explain ownership and why it gates RPCs</li>
+                        <li>Distinguish listen server, dedicated server, and client net modes</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 60 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#clientserver" class="toc-link">Client-Server &amp; Authority</a></li>
+                        <li><a href="#hasauthority" class="toc-link">Checking Authority</a></li>
+                        <li><a href="#roles" class="toc-link">Network Roles</a></li>
+                        <li><a href="#ownership" class="toc-link">Ownership</a></li>
+                        <li><a href="#netmodes" class="toc-link">Net Modes</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="clientserver" class="lesson-section">
+                <h2>Client-Server &amp; Authority</h2>
+                <p>Unreal multiplayer is <strong>client-server</strong>, not peer-to-peer. One machine is the <strong>server</strong> — the single source of truth. Clients send input to the server and receive updates back. The server decides what's real; clients display it.</p>
+
+                <div class="mermaid">
+                    graph TD
+                        S["SERVER (authority)<br/>the real game state"]
+                        S -->|"replicates state"| C1["Client 1 (a copy)"]
+                        S -->|"replicates state"| C2["Client 2 (a copy)"]
+                        C1 -->|"sends input / requests"| S
+                        C2 -->|"sends input / requests"| S
+                </div>
+                <figure>
+                    <figcaption>Figure 1: The server owns the truth and pushes state to clients; clients send requests up. This one-way authority is the foundation of everything in this module.</figcaption>
+                </figure>
+
+                <div class="card card-accent">
+                    <h4>📖 Authority = "the server's copy is the real one"</h4>
+                    <p>The machine with <strong>authority</strong> over an actor gets to make real decisions about it — apply damage, change score, spawn. On clients, actors are <em>replicated copies</em> that mostly display what the server tells them. This is why cheating is harder: a client can lie about its own screen, but the authoritative server has the final say on game state. It's also why <strong>GameMode is server-only</strong> (Lesson 3.1) and <strong><code>Possess</code> must run on the server</strong> (Lesson 4.3) — those were previews of exactly this principle.</p>
+                </div>
+            </section>
+
+            <section id="hasauthority" class="lesson-section">
+                <h2>Checking Authority</h2>
+                <p>Because the same C++ runs on server and clients, you constantly need to ask "am I the authority here?" That's <code>HasAuthority()</code>.</p>
+
+                <pre><code class="language-cpp">void AEnemy::TakeDamage(float Amount)
+{
+    // Only the server may change authoritative game state.
+    if (!HasAuthority())
+    {
+        return;   // a client must NOT change health directly — ask the server (RPC, Lesson 10.3)
+    }
+
+    Health -= Amount;          // safe: we're the authority
+    if (Health &lt;= 0.0f)
+    {
+        Destroy();             // destroying an actor is a server decision
+    }
+}</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Gameplay-changing code must be authority-guarded</h4>
+                    <p>Applying damage, spawning, destroying, changing score — these must happen on the <strong>server</strong>. Wrapping them in <code>if (HasAuthority())</code> ensures a client running the same function can't corrupt shared state. A client that wants something to happen doesn't do it directly; it <em>asks</em> the server via a Server RPC (Lesson 10.3). Getting this guard wrong is the root of most multiplayer bugs.</p>
+                </div>
+
+                <div class="card card-success">
+                    <h4>✅ The three-part networking pattern</h4>
+                    <p>Almost every networked action follows: <strong>(1)</strong> client asks the server (RPC), <strong>(2)</strong> server changes authoritative state, <strong>(3)</strong> that state <em>replicates</em> back to all clients (properties). This lesson sets up the roles; 10.2 covers step 3, 10.3 covers step 1, and 10.4 assembles all three.</p>
+                </div>
+            </section>
+
+            <section id="roles" class="lesson-section">
+                <h2>Network Roles</h2>
+                <p>Every replicated actor has a <strong>role</strong> on each machine, describing that machine's relationship to it. The three you'll meet:</p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Role</th><th>Meaning</th><th>Example</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>ROLE_Authority</code></td><td>This machine owns the truth for this actor</td><td>Any actor, on the server</td></tr>
+                            <tr><td><code>ROLE_AutonomousProxy</code></td><td>A client controlling this actor (gets prediction)</td><td>Your own pawn, on your client</td></tr>
+                            <tr><td><code>ROLE_SimulatedProxy</code></td><td>A client just displaying this actor</td><td>Another player's pawn, on your client</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="mermaid">
+                    graph TD
+                        subgraph Server
+                        SA["Your pawn: Authority"]
+                        SB["Their pawn: Authority"]
+                        end
+                        subgraph YourClient["Your client"]
+                        CA["Your pawn: AutonomousProxy"]
+                        CB["Their pawn: SimulatedProxy"]
+                        end
+                </div>
+                <figure>
+                    <figcaption>Figure 2: The same pawn has different roles on different machines. On the server everything is Authority; on your client, your pawn is AutonomousProxy (you drive it) and others are SimulatedProxy (you just watch them).</figcaption>
+                </figure>
+
+                <div class="card card-accent">
+                    <h4>📖 Why AutonomousProxy is special</h4>
+                    <p>Your own pawn gets <code>ROLE_AutonomousProxy</code> so the engine can do <strong>client-side prediction</strong> — moving you immediately on your machine rather than waiting a round-trip to the server (which would feel laggy). The Character Movement Component (Lesson 4.2) does this automatically. Other players' pawns are <code>SimulatedProxy</code> — you just interpolate what the server reports. Check the role with <code>GetLocalRole()</code>/<code>GetRemoteRole()</code> when behavior should differ.</p>
+                </div>
+            </section>
+
+            <section id="ownership" class="lesson-section">
+                <h2>Ownership</h2>
+                <p><strong>Ownership</strong> is the connection between a client and the actors it's allowed to command. A PlayerController owns its pawn; that ownership chain is what lets a client send RPCs about that pawn. The server enforces it — a client can't send a Server RPC on an actor it doesn't own.</p>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Ownership gates client → server RPCs</h4>
+                    <p>A Server RPC (Lesson 10.3) only works if the calling client <strong>owns</strong> the actor it's called on. Your PlayerController owns your Pawn, so a Server RPC on your Pawn is allowed. Try to call one on an actor you don't own and the engine drops it. This is why player-controlled logic lives on owned actors (Pawn/PlayerController) — the same "who owns what" thinking as Lesson 4.3's Controller-vs-Pawn split, now enforced by the network.</p>
+                </div>
+
+                <div class="card card-success">
+                    <h4>✅ The ownership chain</h4>
+                    <p>Connection → PlayerController → Pawn → (attached/owned actors). Set ownership with <code>SetOwner</code> (recall <code>FActorSpawnParameters::Owner</code> from Lesson 3.4 — that's exactly this). A weapon owned by your character is owned, transitively, by you — so you can send Server RPCs about it.</p>
+                </div>
+            </section>
+
+            <section id="netmodes" class="lesson-section">
+                <h2>Net Modes</h2>
+                <p>Finally, the shapes a running instance can take — the <strong>net mode</strong>:</p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Net Mode</th><th>What it is</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>NM_Standalone</code></td><td>Single-player — no networking (everything is authority)</td></tr>
+                            <tr><td><code>NM_ListenServer</code></td><td>A player's machine acts as both server and a client</td></tr>
+                            <tr><td><code>NM_DedicatedServer</code></td><td>A server with no local player (pro/hosted)</td></tr>
+                            <tr><td><code>NM_Client</code></td><td>A pure client connected to a server</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card card-success">
+                    <h4>✅ Test with multiple clients in PIE</h4>
+                    <p>In the editor you can set <strong>Number of Players</strong> and <strong>Net Mode</strong> in the Play settings to run a listen server plus clients right in PIE — invaluable for testing replication without deploying a server. A key habit: <strong>test networked features early and often in multi-client PIE</strong>, because "works in Standalone" tells you nothing about whether replication is correct. Single-player is <code>NM_Standalone</code> where <code>HasAuthority()</code> is always true — which is why bugs hide until you go multiplayer.</p>
+                </div>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: Reason about authority</h3>
+                    <p><strong>Objective:</strong> Apply the model before writing replication code.</p>
+                    <ol>
+                        <li>A client presses "fire." Where should the actual damage be applied, and how does the request get there?</li>
+                        <li>On your client, what role does your own character have? What role does another player's character have?</li>
+                        <li>Why can you send a Server RPC on your own pawn but not on an enemy you don't own?</li>
+                        <li>Which net mode is single-player, and why do networking bugs hide there?</li>
+                    </ol>
+
+                    <details>
+                        <summary>✅ Answers</summary>
+                        <ul>
+                            <li><strong>1.</strong> Damage is applied on the <strong>server</strong> (authority). The client sends a Server RPC (10.3) requesting the shot; the server validates and applies it.</li>
+                            <li><strong>2.</strong> Yours = <code>AutonomousProxy</code> (you control it, gets prediction); theirs = <code>SimulatedProxy</code> (you just display it).</li>
+                            <li><strong>3.</strong> Server RPCs require <strong>ownership</strong>; your PlayerController owns your pawn but not the enemy, so the engine drops an RPC on an un-owned actor.</li>
+                            <li><strong>4.</strong> <code>NM_Standalone</code>. <code>HasAuthority()</code> is always true there, so missing authority guards and replication never manifest until you run a real client-server session.</li>
+                        </ul>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> Who is the single source of truth in Unreal multiplayer?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — the server has authority over game state.">A) The server</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Clients hold copies, not the truth.">B) Each client for itself</button>
+                            <button class="quiz-option" data-correct="false" data-hint="It's client-server, not P2P.">C) All peers equally</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> Code that applies damage should be guarded with:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — authoritative state changes must run on the server.">A) <code>if (HasAuthority())</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="Ticking isn't authority.">B) <code>if (bCanEverTick)</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="Validity isn't authority.">C) <code>if (IsValid(this))</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> On your client, another player's character has which role?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="Only the server has authority.">A) <code>ROLE_Authority</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="That's your own pawn.">B) <code>ROLE_AutonomousProxy</code></button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — other players' pawns are SimulatedProxy on your client.">C) <code>ROLE_SimulatedProxy</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li>Unreal multiplayer is <strong>client-server</strong>: the server holds authoritative truth and replicates it to clients, who send requests up.</li>
+                        <li>Guard authoritative changes (damage, spawn, destroy, score) with <strong><code>HasAuthority()</code></strong> — this is why GameMode is server-only and <code>Possess</code> is a server action.</li>
+                        <li><strong>Roles</strong>: <code>Authority</code> (server truth), <code>AutonomousProxy</code> (your predicted pawn), <code>SimulatedProxy</code> (others you display).</li>
+                        <li><strong>Ownership</strong> (Connection → Controller → Pawn) gates client → server RPCs — you can only command actors you own.</li>
+                        <li><strong>Net modes</strong>: Standalone / ListenServer / DedicatedServer / Client — test networked features in multi-client PIE, since Standalone hides replication bugs.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/networking-overview-for-unreal-engine" target="_blank" rel="noopener">Networking Overview (Epic)</a></li>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/actor-role-and-remoterole-in-unreal-engine" target="_blank" rel="noopener">Actor Role &amp; RemoteRole (Epic)</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p>You have the model. Now step 3 of the pattern — getting server state to clients automatically: <strong>property replication and RepNotify</strong>, so a replicated health value updates every client's HUD without you writing any sync code.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Lesson complete!</h3>
+                    <p>The mental model is set. Let's replicate some state.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m09_l02_data_binding_and_events.html" class="prev-lesson">← Previous: Data Binding &amp; UI Events from C++</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m10_l02_property_replication.html" class="next-lesson">Next: Property Replication &amp; RepNotify →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

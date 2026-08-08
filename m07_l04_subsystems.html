@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Subsystems in Unreal Engine 5.8 C++: GameInstance, World, and LocalPlayer subsystems as the modern singleton — lifetime, Initialize/Deinitialize, and access.">
+    <meta name="author" content="Ray de la Paz">
+    <title>Subsystems — The Modern Singleton — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 7</a></li>
+            <li aria-current="page">Lesson 7.4: Subsystems — The Modern Singleton</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>🧭 Lesson 7.4: Subsystems — The Modern Singleton</h1>
+                <p class="lead">Every game needs global-ish services: a save manager, an inventory system, an audio director, a match manager. The old answer was singletons or a bloated GameInstance — both messy. Subsystems are Unreal's clean, lifetime-managed replacement, and once you use them you won't go back.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Explain why subsystems replace manual singletons</li>
+                        <li>Pick the right subsystem type by desired lifetime</li>
+                        <li>Write a <code>UGameInstanceSubsystem</code> with <code>Initialize</code>/<code>Deinitialize</code></li>
+                        <li>Access a subsystem from C++ and Blueprint</li>
+                        <li>Use a subsystem as the home for the save manager from Lesson 7.3</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 60 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#why" class="toc-link">Why Not Singletons?</a></li>
+                        <li><a href="#types" class="toc-link">The Subsystem Types</a></li>
+                        <li><a href="#writing" class="toc-link">Writing a Subsystem</a></li>
+                        <li><a href="#access" class="toc-link">Accessing It</a></li>
+                        <li><a href="#savemanager" class="toc-link">A Save Manager Subsystem</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="why" class="lesson-section">
+                <h2>Why Not Singletons?</h2>
+                <p>A hand-rolled singleton in a game engine causes real pain: <em>when</em> is it created and destroyed? Who owns it? How does it get the world? Does it leak between play sessions in the editor? You end up writing lifetime bookkeeping and static-access boilerplate — and getting it subtly wrong.</p>
+
+                <div class="card card-accent">
+                    <h4>📖 What a subsystem gives you for free</h4>
+                    <ul>
+                        <li><strong>Automatic lifetime</strong> — the engine creates it when its owner (GameInstance, World, etc.) is created and destroys it with the owner. No manual <code>new</code>/<code>delete</code>.</li>
+                        <li><strong>Clean access</strong> — a typed <code>GetSubsystem&lt;T&gt;</code> call, no global variable.</li>
+                        <li><strong>Editor-safe</strong> — no leaking singletons between PIE sessions.</li>
+                        <li><strong>Blueprint-accessible</strong> — subsystems are exposed to Blueprint automatically.</li>
+                    </ul>
+                </div>
+
+                <div class="card card-success">
+                    <h4>✅ The one-line pitch</h4>
+                    <p>A subsystem is "a UObject the engine automatically creates, manages, and tears down alongside a well-defined owner, with typed access built in." It's a managed singleton with the sharp edges filed off.</p>
+                </div>
+            </section>
+
+            <section id="types" class="lesson-section">
+                <h2>The Subsystem Types</h2>
+                <p>You choose a subsystem <em>type</em> by the lifetime you want. Each is tied to a host object and lives exactly as long as it does.</p>
+
+                <div class="mermaid">
+                    graph TD
+                        GI["UGameInstanceSubsystem<br/>lives whole game session"] --> GIu["Owner: GameInstance"]
+                        W["UWorldSubsystem<br/>lives per level/world"] --> Wu["Owner: World"]
+                        LP["ULocalPlayerSubsystem<br/>lives per local player"] --> LPu["Owner: LocalPlayer"]
+                        E["UEditorSubsystem<br/>editor-only tools"] --> Eu["Owner: Editor"]
+                </div>
+                <figure>
+                    <figcaption>Figure 1: Pick the subsystem whose lifetime matches your service. You already used one — the <code>UEnhancedInputLocalPlayerSubsystem</code> in Module 4 is a LocalPlayer subsystem.</figcaption>
+                </figure>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Type</th><th>Lives as long as</th><th>Good for</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>UGameInstanceSubsystem</code></td><td>The whole game session (across level loads)</td><td>Save manager, audio director, online session</td></tr>
+                            <tr><td><code>UWorldSubsystem</code></td><td>The current world/level</td><td>Spawn manager, level-specific director</td></tr>
+                            <tr><td><code>ULocalPlayerSubsystem</code></td><td>A local player</td><td>Input mapping (as you saw), per-player UI state</td></tr>
+                            <tr><td><code>UEditorSubsystem</code></td><td>The editor session</td><td>Editor tooling (Module 11-adjacent)</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <blockquote>
+                    <strong>💡 The deciding question:</strong> "how long should this service live?" Persist across level changes → GameInstance. Tied to one level → World. Per player → LocalPlayer. Match the lifetime and the engine handles the rest.</blockquote>
+            </section>
+
+            <section id="writing" class="lesson-section">
+                <h2>Writing a Subsystem</h2>
+                <p>Subclass the type and override <code>Initialize</code>/<code>Deinitialize</code> — the subsystem's own lifecycle hooks (analogous to <code>BeginPlay</code>/<code>EndPlay</code> for actors).</p>
+
+                <pre><code class="language-cpp">// InventorySubsystem.h
+#pragma once
+#include "CoreMinimal.h"
+#include "Subsystems/GameInstanceSubsystem.h"
+#include "InventorySubsystem.generated.h"
+
+UCLASS()
+class MYPROJECT_API UInventorySubsystem : public UGameInstanceSubsystem
+{
+    GENERATED_BODY()
+
+public:
+    // Called when the subsystem is created (GameInstance startup).
+    virtual void Initialize(FSubsystemCollectionBase&amp; Collection) override;
+    // Called when it's torn down (GameInstance shutdown).
+    virtual void Deinitialize() override;
+
+    UFUNCTION(BlueprintCallable, Category = "Inventory")
+    void AddItem(FName ItemId, int32 Count);
+
+    UFUNCTION(BlueprintPure, Category = "Inventory")
+    int32 GetItemCount(FName ItemId) const;
+
+private:
+    UPROPERTY()
+    TMap&lt;FName, int32&gt; Items;   // survives level loads with the GameInstance
+};</code></pre>
+
+                <pre><code class="language-cpp">// InventorySubsystem.cpp
+#include "InventorySubsystem.h"
+
+void UInventorySubsystem::Initialize(FSubsystemCollectionBase&amp; Collection)
+{
+    Super::Initialize(Collection);
+    UE_LOG(LogTemp, Log, TEXT("Inventory subsystem ready"));
+}
+
+void UInventorySubsystem::Deinitialize()
+{
+    UE_LOG(LogTemp, Log, TEXT("Inventory subsystem shutting down"));
+    Super::Deinitialize();
+}
+
+void UInventorySubsystem::AddItem(FName ItemId, int32 Count)
+{
+    Items.FindOrAdd(ItemId) += Count;   // TMap from Lesson 2.4
+}
+
+int32 UInventorySubsystem::GetItemCount(FName ItemId) const
+{
+    const int32* Found = Items.Find(ItemId);
+    return Found ? *Found : 0;
+}</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ No registration needed</h4>
+                    <p>You don't register the subsystem anywhere — the engine discovers it via reflection and instantiates it automatically for every GameInstance. Define the class, and it exists. (You can override <code>ShouldCreateSubsystem</code> if you want conditional creation.) The <code>TMap</code> lives on the GameInstance subsystem, so inventory survives traveling between levels — exactly the persistence you'd otherwise hand-roll.</p>
+                </div>
+            </section>
+
+            <section id="access" class="lesson-section">
+                <h2>Accessing It</h2>
+                <p>Get a subsystem from its owner with a typed template call — no globals, no null singletons.</p>
+
+                <pre><code class="language-cpp">// From anywhere with a world context (an actor, component, etc.):
+if (UGameInstance* GI = GetGameInstance())   // or GetWorld()->GetGameInstance()
+{
+    UInventorySubsystem* Inv = GI->GetSubsystem&lt;UInventorySubsystem&gt;();
+    if (Inv)
+    {
+        Inv->AddItem(TEXT("Potion"), 3);
+    }
+}
+
+// World subsystem:
+UMySpawnManager* SM = GetWorld()->GetSubsystem&lt;UMySpawnManager&gt;();
+
+// LocalPlayer subsystem (as in Module 4):
+ULocalPlayer* LP = PlayerController->GetLocalPlayer();
+auto* Input = ULocalPlayer::GetSubsystem&lt;UEnhancedInputLocalPlayerSubsystem&gt;(LP);</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 It's the same call you already used</h4>
+                    <p>Back in Lesson 4.1 you wrote <code>ULocalPlayer::GetSubsystem&lt;UEnhancedInputLocalPlayerSubsystem&gt;(...)</code> without dwelling on it. Now you know: that's the subsystem access pattern, and Enhanced Input <em>is</em> a subsystem. The engine is built on this pattern; you're just writing your own now. Blueprint gets the same access via automatic "Get [Subsystem]" nodes.</p>
+                </div>
+            </section>
+
+            <section id="savemanager" class="lesson-section">
+                <h2>A Save Manager Subsystem</h2>
+                <p>The save/load code from Lesson 7.3 was on the GameMode — but GameMode is per-level and server-only. A save manager should persist across levels and be reachable from anywhere. That's a textbook <strong>GameInstance subsystem</strong>.</p>
+
+                <pre><code class="language-cpp">UCLASS()
+class MYPROJECT_API USaveManagerSubsystem : public UGameInstanceSubsystem
+{
+    GENERATED_BODY()
+
+public:
+    UFUNCTION(BlueprintCallable, Category = "Save")
+    void SaveToSlot(const FString&amp; SlotName);
+
+    UFUNCTION(BlueprintCallable, Category = "Save")
+    bool LoadFromSlot(const FString&amp; SlotName);
+
+    UFUNCTION(BlueprintPure, Category = "Save")
+    bool HasSave(const FString&amp; SlotName) const
+    {
+        return UGameplayStatics::DoesSaveGameExist(SlotName, 0);
+    }
+};</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ Everything converges here</h4>
+                    <p>Now the whole module composes: the subsystem (7.4) owns save/load (7.3), which serializes state gathered via components (3.3/3.5), configured from DataAssets/DataTables (7.1), with settings in config (7.2) — all exposed to Blueprint (Module 6). A UI button anywhere calls <code>GetGameInstance()->GetSubsystem&lt;USaveManagerSubsystem&gt;()->SaveToSlot("Auto")</code>. This is what a well-architected Unreal C++ project looks like: managed services, clean data, seamless interop.</p>
+                </div>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: A score subsystem</h3>
+                    <p><strong>Objective:</strong> Build a global score service and wire it to an event.</p>
+                    <ol>
+                        <li>Create <code>UScoreSubsystem : public UGameInstanceSubsystem</code> holding an <code>int32 Score</code>.</li>
+                        <li>Add <code>BlueprintCallable AddScore(int32)</code> and a <code>BlueprintAssignable OnScoreChanged</code> event (Lesson 5.4).</li>
+                        <li>Have an enemy's <code>OnDeath</code> (Lesson 5.4) call <code>AddScore</code> — fetch the subsystem via <code>GetGameInstance()->GetSubsystem</code>.</li>
+                        <li>Why is GameInstance the right lifetime here rather than World?</li>
+                    </ol>
+
+                    <details>
+                        <summary>✅ Answer</summary>
+                        <p>Score should persist across level transitions within a session (you don't reset the player's score just because they entered a new area). A World subsystem would be recreated per level, wiping the score. GameInstance lives the whole session, so the score survives level loads.</p>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> A service that must persist across level loads for the whole session should be a:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — GameInstance subsystems live the whole session.">A) <code>UGameInstanceSubsystem</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="That's recreated per level.">B) <code>UWorldSubsystem</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="That's per player.">C) <code>ULocalPlayerSubsystem</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> Which methods are a subsystem's lifecycle hooks?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — Initialize and Deinitialize bracket a subsystem's life.">A) <code>Initialize</code> / <code>Deinitialize</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="Those are actor hooks.">B) <code>BeginPlay</code> / <code>EndPlay</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="That's a constructor.">C) <code>Construct</code> / <code>Destruct</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> How do you get a GameInstance subsystem in C++?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — typed GetSubsystem<T> off the GameInstance.">A) <code>GetGameInstance()->GetSubsystem&lt;UMySubsystem&gt;()</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="No manual singleton needed.">B) A static <code>UMySubsystem::Get()</code> you write yourself</button>
+                            <button class="quiz-option" data-correct="false" data-hint="You don't spawn subsystems.">C) <code>SpawnActor</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li><strong>Subsystems</strong> are the modern singleton: engine-managed lifetime, typed access, editor-safe, Blueprint-accessible — no manual bookkeeping.</li>
+                        <li>Pick by lifetime: <strong>GameInstance</strong> (whole session), <strong>World</strong> (per level), <strong>LocalPlayer</strong> (per player), <strong>Editor</strong> (tools).</li>
+                        <li>Subclass the type, override <code>Initialize</code>/<code>Deinitialize</code>; no registration — reflection auto-creates it.</li>
+                        <li>Access with <code>Owner->GetSubsystem&lt;T&gt;()</code> — the same call you used for Enhanced Input in Module 4.</li>
+                        <li>Subsystems are the right home for global services — save managers, inventory, score — pulling the whole module together.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/programming-subsystems-in-unreal-engine" target="_blank" rel="noopener">Programming Subsystems (Epic)</a></li>
+                    <li><a href="https://benui.ca/unreal/subsystem-singleton/" target="_blank" rel="noopener">BenUI — Subsystems as singletons</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p><strong>Module 7 is complete</strong> — your game is data-driven, configurable, persistent, and organized around clean services. <strong>Module 8</strong> goes under the build: <strong>modules, the build system, and plugins</strong> — how to structure, extend, and package your C++ at the project level.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Module 7 complete!</h3>
+                    <p>Data, persistence, and services mastered. Let's look at how it all builds.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m07_l03_savegame.html" class="prev-lesson">← Previous: Saving &amp; Loading with SaveGame</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m08_l01_modules_and_build_cs.html" class="next-lesson">Next: Modules in Depth — Build.cs &amp; Target.cs →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

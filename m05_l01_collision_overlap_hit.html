@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Collision in Unreal Engine 5.8 C++: collision channels and responses, overlap vs blocking hits, and binding OnComponentBeginOverlap and OnComponentHit in native code.">
+    <meta name="author" content="Ray de la Paz">
+    <title>Collision, Overlaps &amp; Hit Events — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 5</a></li>
+            <li aria-current="page">Lesson 5.1: Collision, Overlaps &amp; Hit Events</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>💥 Lesson 5.1: Collision, Overlaps &amp; Hit Events</h1>
+                <p class="lead">Interaction starts with collision: a pickup detecting the player, a bullet striking a wall, a trigger firing when someone enters. Unreal's collision system is powerful but full of settings that must line up — get them right and events flow; get them wrong and nothing happens, silently.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Distinguish <strong>overlap</strong> from <strong>blocking hit</strong> and know which fires which event</li>
+                        <li>Explain collision channels, object types, and responses</li>
+                        <li>Configure a component's collision in C++</li>
+                        <li>Bind <code>OnComponentBeginOverlap</code>, <code>OnComponentEndOverlap</code>, and <code>OnComponentHit</code></li>
+                        <li>Write a working pickup that grants on overlap and destroys itself</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 60 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#overlap-vs-hit" class="toc-link">Overlap vs Blocking Hit</a></li>
+                        <li><a href="#channels" class="toc-link">Channels &amp; Responses</a></li>
+                        <li><a href="#configure" class="toc-link">Configuring Collision in C++</a></li>
+                        <li><a href="#events" class="toc-link">Binding Collision Events</a></li>
+                        <li><a href="#pickup" class="toc-link">A Complete Pickup</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="overlap-vs-hit" class="lesson-section">
+                <h2>Overlap vs Blocking Hit</h2>
+                <p>Two fundamentally different interactions, two different event families:</p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th></th><th>Overlap</th><th>Blocking Hit</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>Physical effect</td><td>Objects pass <em>through</em> each other</td><td>Objects <em>stop</em> each other</td></tr>
+                            <tr><td>Fires</td><td><code>OnComponentBeginOverlap</code> / <code>EndOverlap</code></td><td><code>OnComponentHit</code></td></tr>
+                            <tr><td>Typical use</td><td>Pickups, triggers, detection zones</td><td>Walls, projectiles that impact, physics</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="mermaid">
+                    graph TD
+                        A["Two components meet"] --> Q{"Response between them?"}
+                        Q -->|"Both set to Overlap"| O["Overlap events fire<br/>(pass through)"]
+                        Q -->|"Either set to Block"| B["Blocking hit — they stop<br/>Hit event fires"]
+                        Q -->|"Ignore"| N["Nothing — no events"]
+                </div>
+                <figure>
+                    <figcaption>Figure 1: What happens when two components meet depends on their collision <em>responses</em> to each other. Overlap needs BOTH to overlap; a single Block makes it a blocking hit.</figcaption>
+                </figure>
+
+                <div class="card card-accent">
+                    <h4>📖 The rule that trips everyone up</h4>
+                    <p>For an <strong>overlap</strong> event to fire, <em>both</em> components must be set to overlap each other, AND the moving one must have <strong>Generate Overlap Events</strong> enabled. Miss any of those and you get silence — no error, just nothing. Half of all "my collision isn't working" issues are a missing overlap-generation flag.</p>
+                </div>
+            </section>
+
+            <section id="channels" class="lesson-section">
+                <h2>Channels &amp; Responses</h2>
+                <p>Collision is organized by <strong>channels</strong>. Every collidable component has an <em>object type</em> (which channel it <em>is</em>) and a set of <em>responses</em> (how it reacts to each channel: Ignore, Overlap, or Block).</p>
+
+                <div class="mermaid">
+                    graph LR
+                        Comp["A component"] --> OT["Object Type<br/>(e.g. Pawn, WorldStatic)"]
+                        Comp --> R["Responses to each channel:<br/>Ignore / Overlap / Block"]
+                </div>
+                <figure>
+                    <figcaption>Figure 2: A component both <em>is</em> a channel (its object type) and <em>responds</em> to every channel. Two components interacting consult each other's responses.</figcaption>
+                </figure>
+
+                <ul>
+                    <li><strong>Object type</strong> — the channel this component belongs to: <code>Pawn</code>, <code>WorldStatic</code>, <code>WorldDynamic</code>, <code>PhysicsBody</code>, or a custom channel you define in Project Settings.</li>
+                    <li><strong>Response</strong> — for each channel, one of <code>ECR_Ignore</code>, <code>ECR_Overlap</code>, <code>ECR_Block</code>.</li>
+                    <li><strong>Collision presets</strong> — named bundles of these settings (<code>"Pawn"</code>, <code>"OverlapAllDynamic"</code>, <code>"BlockAll"</code>, <code>"Trigger"</code>) so you rarely set every response by hand.</li>
+                </ul>
+
+                <div class="card card-success">
+                    <h4>✅ Presets first, custom later</h4>
+                    <p>Start with a preset that matches your intent — <code>"OverlapAllDynamic"</code> for a pickup, <code>"BlockAll"</code> for a wall. Only reach for per-channel responses when a preset doesn't fit. Custom channels (Project Settings → Collision) are for gameplay-specific categories like an "Interaction" trace channel — we use one in Lesson 5.2.</p>
+                </div>
+            </section>
+
+            <section id="configure" class="lesson-section">
+                <h2>Configuring Collision in C++</h2>
+                <p>You set collision on the component, usually in the constructor. A trigger sphere for a pickup wants to overlap pawns and block nothing:</p>
+
+                <pre><code class="language-cpp">#include "Components/SphereComponent.h"
+
+APickup::APickup()
+{
+    Collision = CreateDefaultSubobject&lt;USphereComponent&gt;(TEXT("Collision"));
+    RootComponent = Collision;
+    Collision->SetSphereRadius(80.0f);
+
+    // Use the trigger-style preset: query-only, overlaps dynamic things.
+    Collision->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
+
+    // Or configure explicitly:
+    Collision->SetCollisionEnabled(ECollisionEnabled::QueryOnly); // no physics, just events
+    Collision->SetCollisionObjectType(ECC_WorldDynamic);
+    Collision->SetCollisionResponseToAllChannels(ECR_Overlap);
+    Collision->SetGenerateOverlapEvents(true);   // ← the flag people forget
+}</code></pre>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th><code>ECollisionEnabled</code></th><th>Meaning</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>NoCollision</code></td><td>Off entirely</td></tr>
+                            <tr><td><code>QueryOnly</code></td><td>Overlaps &amp; traces, but no physics (triggers, pickups)</td></tr>
+                            <tr><td><code>PhysicsOnly</code></td><td>Physics simulation, no queries</td></tr>
+                            <tr><td><code>QueryAndPhysics</code></td><td>Both (solid physical objects)</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card card-warning">
+                    <h4>⚠️ QueryOnly for triggers</h4>
+                    <p>A pickup or trigger volume should be <code>QueryOnly</code> — it detects overlaps but doesn't shove the player around with physics. Using <code>QueryAndPhysics</code> on a trigger can knock actors off course. Match the collision-enabled mode to whether the thing is physical or just a sensor.</p>
+                </div>
+            </section>
+
+            <section id="events" class="lesson-section">
+                <h2>Binding Collision Events</h2>
+                <p>Collision events are <strong>dynamic multicast delegates</strong> (the full mechanism is Lesson 5.4). You subscribe your function with <code>AddDynamic</code>, and your function's signature must match the delegate exactly. Bind in <code>BeginPlay</code> (the component exists and the world is live).</p>
+
+                <pre><code class="language-cpp">// Header — the handler signatures are fixed by the delegate types:
+UFUNCTION()
+void OnBeginOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor,
+    UPrimitiveComponent* OtherComp, int32 OtherBodyIndex,
+    bool bFromSweep, const FHitResult&amp; SweepResult);
+
+UFUNCTION()
+void OnHit(UPrimitiveComponent* HitComp, AActor* OtherActor,
+    UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult&amp; Hit);</code></pre>
+
+                <pre><code class="language-cpp">void APickup::BeginPlay()
+{
+    Super::BeginPlay();
+
+    // Subscribe our UFUNCTIONs to the component's delegates.
+    Collision->OnComponentBeginOverlap.AddDynamic(this, &amp;APickup::OnBeginOverlap);
+}
+
+void APickup::OnBeginOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor,
+    UPrimitiveComponent* OtherComp, int32 OtherBodyIndex,
+    bool bFromSweep, const FHitResult&amp; SweepResult)
+{
+    // OtherActor is who entered our sphere.
+    if (IsValid(OtherActor) &amp;&amp; OtherActor != this)
+    {
+        UE_LOG(LogTemp, Log, TEXT("%s entered pickup"), *OtherActor->GetName());
+    }
+}</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Handlers bound with AddDynamic MUST be <code>UFUNCTION()</code></h4>
+                    <p><code>AddDynamic</code> binds by name through the reflection system, so the target function <em>must</em> be marked <code>UFUNCTION()</code> and its signature must match the delegate's parameters exactly. A missing <code>UFUNCTION()</code> or a mismatched signature fails to bind (often with a cryptic error). Copy the signature from the engine's delegate declaration to be safe.</p>
+                </div>
+            </section>
+
+            <section id="pickup" class="lesson-section">
+                <h2>A Complete Pickup</h2>
+                <p>Combining collision with the <code>UHealthComponent</code> pattern from Lesson 3.3 and <code>Destroy()</code> from 3.4 — a health pickup that heals whoever has a health component and removes itself:</p>
+
+                <pre><code class="language-cpp">void AHealthPickup::OnBeginOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor,
+    UPrimitiveComponent* OtherComp, int32 OtherBodyIndex,
+    bool bFromSweep, const FHitResult&amp; SweepResult)
+{
+    if (!IsValid(OtherActor) || OtherActor == this) { return; }
+
+    // Composition in action (Lesson 3.5): does the overlapper have health?
+    if (UHealthComponent* Health = OtherActor->FindComponentByClass&lt;UHealthComponent&gt;())
+    {
+        Health->Heal(HealAmount);          // grant the effect
+        UE_LOG(LogTemp, Log, TEXT("Healed %s by %.0f"), *OtherActor->GetName(), HealAmount);
+        Destroy();                          // consume the pickup (deferred GC — Lesson 2.5)
+    }
+    // No health component? It's not a valid target; leave the pickup for someone who is.
+}</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ Look how the modules stack</h4>
+                    <p>This one handler uses collision (5.1), <code>FindComponentByClass</code> capability-checking (3.5), the health component (3.3), <code>IsValid</code> guarding (2.5), and <code>Destroy</code> (3.4). That layering is the point of the course — you're now composing patterns, not learning isolated tricks. This exact pickup returns, generalized, in the Module 6 hybrid pattern and the Module 12 capstone.</p>
+                </div>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: A damage volume</h3>
+                    <p><strong>Objective:</strong> Build a lava/hazard trigger.</p>
+                    <ol>
+                        <li>Create <code>ADamageVolume : public AActor</code> with a <code>UBoxComponent</code> root, <code>QueryOnly</code>, overlapping dynamic objects, overlap events on.</li>
+                        <li>Bind both <code>OnComponentBeginOverlap</code> and <code>OnComponentEndOverlap</code>.</li>
+                        <li>On begin overlap, if the actor has a <code>UHealthComponent</code>, start harming it; on end overlap, stop. (You'll wire the repeating tick with a <em>timer</em> in Lesson 5.3 — for now just log begin/end.)</li>
+                    </ol>
+
+                    <details>
+                        <summary>💡 Hint — end overlap signature</summary>
+                        <pre><code class="language-cpp">UFUNCTION()
+void OnEndOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor,
+    UPrimitiveComponent* OtherComp, int32 OtherBodyIndex);
+// Bind: Box->OnComponentEndOverlap.AddDynamic(this, &amp;ADamageVolume::OnEndOverlap);</code></pre>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> Which event fires when two components pass through each other?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="That's for blocking collisions.">A) <code>OnComponentHit</code></button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — overlap (pass-through) fires the Begin/End overlap events.">B) <code>OnComponentBeginOverlap</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="Not a collision event.">C) <code>OnConstruction</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> Your overlap event never fires. Most likely missing flag?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — Generate Overlap Events must be enabled (and both must overlap).">A) <code>SetGenerateOverlapEvents(true)</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="Ticking is unrelated to overlaps.">B) <code>bCanEverTick = true</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="Not a collision setting.">C) <code>bReplicates = true</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> A function bound via <code>AddDynamic</code> must be:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — dynamic delegates bind by name, requiring UFUNCTION().">A) Marked <code>UFUNCTION()</code> with a matching signature</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Static isn't the requirement.">B) A static function</button>
+                            <button class="quiz-option" data-correct="false" data-hint="const isn't the requirement.">C) A const method</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li><strong>Overlap</strong> (pass-through) fires <code>OnComponentBeginOverlap</code>/<code>EndOverlap</code>; a <strong>blocking hit</strong> fires <code>OnComponentHit</code>.</li>
+                        <li>Collision = an <strong>object type</strong> (which channel you are) + <strong>responses</strong> (Ignore/Overlap/Block per channel); use <strong>presets</strong> first.</li>
+                        <li>Configure with <code>SetCollisionProfileName</code> or explicit <code>SetCollisionEnabled</code>/<code>ObjectType</code>/<code>Response</code>; triggers are <code>QueryOnly</code>; don't forget <code>SetGenerateOverlapEvents(true)</code>.</li>
+                        <li>Bind events in <code>BeginPlay</code> with <code>AddDynamic</code>; handlers must be <code>UFUNCTION()</code> with exact signatures.</li>
+                        <li>A real pickup layers collision + <code>FindComponentByClass</code> + a component effect + <code>Destroy()</code> — patterns composing.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/collision-in-unreal-engine" target="_blank" rel="noopener">Collision Overview (Epic)</a></li>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/collision-response-reference-in-unreal-engine" target="_blank" rel="noopener">Collision Response Reference (Epic)</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p>Overlaps detect things that touch. But often you need to ask "what's over <em>there</em>?" without waiting for contact — shooting a ray, checking line of sight, finding what's under the cursor. That's <strong>traces</strong>, next.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Lesson complete!</h3>
+                    <p>The world can feel contact now. Next, let it sense at a distance.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m04_l03_playercontroller_possession.html" class="prev-lesson">← Previous: PlayerController &amp; Possession</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m05_l02_traces_and_queries.html" class="next-lesson">Next: Traces &amp; Spatial Queries →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

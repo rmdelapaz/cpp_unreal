@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Capstone: build a complete, networked, data-driven, persistent collectible system in Unreal Engine 5.8 C++ — integrating interop, data, save, UI, and replication.">
+    <meta name="author" content="Ray de la Paz">
+    <title>Capstone — A Complete C++ Gameplay Feature — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 12</a></li>
+            <li aria-current="page">Lesson 12.1: Capstone</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>🏆 Lesson 12.1: Capstone — A Complete C++ Gameplay Feature</h1>
+                <p class="lead">This is it — the moment every module has led to. You'll build a <strong>complete collectible system</strong>: collectibles in the world that a player gathers, tracked by a subsystem, shown on a live HUD, saved to disk, and fully networked. It uses <em>every</em> skill in the course, woven into one shippable feature. No new syntax — just mastery, assembled.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this capstone, you will be able to:</p>
+                    <ul>
+                        <li>Architect a full gameplay feature spanning data, actors, UI, persistence, and networking</li>
+                        <li>Build a designer-extensible C++ base class with a clean interop surface</li>
+                        <li>Route state through a subsystem and drive UI with events</li>
+                        <li>Make the whole feature save/load and replicate correctly</li>
+                        <li>See how the course's patterns compose into professional Unreal C++</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 90 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#blueprint" class="toc-link">The Blueprint of the Feature</a></li>
+                        <li><a href="#data" class="toc-link">Step 1: The Data Layer</a></li>
+                        <li><a href="#actor" class="toc-link">Step 2: The Collectible Actor</a></li>
+                        <li><a href="#subsystem" class="toc-link">Step 3: The Collection Subsystem</a></li>
+                        <li><a href="#ui-save-net" class="toc-link">Step 4: HUD, Save &amp; Network</a></li>
+                        <li><a href="#designer" class="toc-link">Step 5: The Designer's Half</a></li>
+                        <li><a href="#recap" class="toc-link">Every Module, One Feature</a></li>
+                        <li><a href="#conclusion" class="toc-link">Course Conclusion</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="blueprint" class="lesson-section">
+                <h2>The Blueprint of the Feature</h2>
+                <p>We're building a collectible system — think coins, gems, or "collect the orbs." A player walks over a collectible; it's added to their collection; the HUD updates; the total persists across sessions; and it all works in multiplayer. Here's the architecture:</p>
+
+                <div class="mermaid">
+                    graph TD
+                        DA["UCollectibleData (DataAsset)<br/>type, value, mesh, sound"] --> A["ACollectibleBase (C++, Abstract)<br/>overlap → collect → destroy"]
+                        A -->|"server grants"| Sub["UCollectionSubsystem<br/>counts per type + OnCollectionChanged"]
+                        Sub -->|"event"| HUD["Collection HUD widget"]
+                        Sub -->|"gather/apply"| Save["USaveGame slot"]
+                        A -->|"BP subclass"| BP["BP_GoldCoin, BP_Gem..."]
+                </div>
+                <figure>
+                    <figcaption>Figure 1: The full feature. Data drives the collectibles; a subsystem tracks the collection; the HUD listens; saves persist it; networking keeps every client in sync. Every arrow is a pattern you've already built.</figcaption>
+                </figure>
+
+                <div class="card card-accent">
+                    <h4>📖 Plan before code — the three lenses</h4>
+                    <p>We plan the feature through three lenses you've internalized: <strong>the interop boundary</strong> (what designers configure vs what C++ enforces, Module 6), <strong>the data flow</strong> (events, not polling, Modules 5/9), and <strong>the network categories</strong> (authoritative / replicated / cosmetic, Module 10). Nail those three and the code writes itself.</p>
+                </div>
+            </section>
+
+            <section id="data" class="lesson-section">
+                <h2>Step 1: The Data Layer</h2>
+                <p>Start with data (Modules 2, 6, 7). A <code>UENUM</code> for the kind, a <code>DataAsset</code> for each collectible's config — so designers add new collectible types with no code.</p>
+
+                <pre><code class="language-cpp">// CollectibleTypes.h
+UENUM(BlueprintType)
+enum class ECollectibleType : uint8   // uint8 for BlueprintType (Lesson 6.3)
+{
+    Coin  UMETA(DisplayName = "Coin"),
+    Gem   UMETA(DisplayName = "Gem"),
+    Key   UMETA(DisplayName = "Key")
+};
+
+// A rich config object referenced directly (Lesson 7.1 DataAsset).
+UCLASS(BlueprintType)
+class MYPROJECT_API UCollectibleData : public UDataAsset
+{
+    GENERATED_BODY()
+public:
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Collectible")
+    ECollectibleType Type = ECollectibleType::Coin;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Collectible")
+    int32 Value = 1;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Collectible")
+    FText DisplayName;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Collectible")
+    TObjectPtr&lt;UStaticMesh&gt; Mesh;
+};</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ Data first, always</h4>
+                    <p>Leading with the data layer means the rest of the system reads from configuration rather than hardcoded values. A designer makes <code>DA_GoldCoin</code> (value 10) and <code>DA_RubyGem</code> (value 50) as assets — the C++ never changes. This is the data-driven mindset from Module 7, and it's why the feature scales to any number of collectible types.</p>
+                </div>
+            </section>
+
+            <section id="actor" class="lesson-section">
+                <h2>Step 2: The Collectible Actor</h2>
+                <p>The C++ base (Modules 3, 5, 6, 10) — a networked collectible with the overlap-grant-destroy mechanic, an interop surface, and a cosmetic hook for designers.</p>
+
+                <pre><code class="language-cpp">// CollectibleBase.h
+UCLASS(Abstract, Blueprintable)   // designer-extensible base (Lesson 6.4)
+class MYPROJECT_API ACollectibleBase : public AActor
+{
+    GENERATED_BODY()
+public:
+    ACollectibleBase();
+protected:
+    virtual void BeginPlay() override;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Collectible")
+    TObjectPtr&lt;USphereComponent&gt; Collision;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Collectible")
+    TObjectPtr&lt;UStaticMeshComponent&gt; Mesh;
+
+    // Designers assign a DataAsset per Blueprint subclass (Step 1).
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Collectible")
+    TObjectPtr&lt;UCollectibleData&gt; Data;
+
+    // Replicated so late/lagging clients see it as taken (Lesson 10.2).
+    UPROPERTY(ReplicatedUsing = OnRep_Collected)
+    bool bCollected = false;
+
+    UFUNCTION()
+    void OnRep_Collected();
+
+    UFUNCTION()
+    void OnBeginOverlap(UPrimitiveComponent* C, AActor* Other, UPrimitiveComponent* OC,
+        int32 Idx, bool bSweep, const FHitResult&amp; Hit);
+
+    // Cosmetic hook designers implement in Blueprint (Lesson 6.1).
+    UFUNCTION(BlueprintImplementableEvent, Category = "Collectible")
+    void OnCollectedFX();
+
+    // Cosmetic broadcast to all machines (Lesson 10.3).
+    UFUNCTION(NetMulticast, Unreliable)
+    void MulticastCollectedFX();
+
+    virtual void GetLifetimeReplicatedProps(TArray&lt;FLifetimeProperty&gt;&amp;) const override;
+};</code></pre>
+
+                <pre><code class="language-cpp">// CollectibleBase.cpp
+#include "Net/UnrealNetwork.h"
+
+ACollectibleBase::ACollectibleBase()
+{
+    PrimaryActorTick.bCanEverTick = false;   // event-driven, no Tick (Lesson 11.2)
+    bReplicates = true;                       // networked (Lesson 10.2)
+
+    Collision = CreateDefaultSubobject&lt;USphereComponent&gt;(TEXT("Collision"));
+    RootComponent = Collision;
+    Collision->SetCollisionProfileName(TEXT("OverlapAllDynamic"));
+
+    Mesh = CreateDefaultSubobject&lt;UStaticMeshComponent&gt;(TEXT("Mesh"));
+    Mesh->SetupAttachment(RootComponent);
+    Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+}
+
+void ACollectibleBase::BeginPlay()
+{
+    Super::BeginPlay();
+    if (Data &amp;&amp; Data->Mesh) { Mesh->SetStaticMesh(Data->Mesh); }   // data-driven visuals
+    Collision->OnComponentBeginOverlap.AddDynamic(this, &amp;ACollectibleBase::OnBeginOverlap);
+}
+
+void ACollectibleBase::GetLifetimeReplicatedProps(TArray&lt;FLifetimeProperty&gt;&amp; Out) const
+{
+    Super::GetLifetimeReplicatedProps(Out);
+    DOREPLIFETIME(ACollectibleBase, bCollected);
+}
+
+void ACollectibleBase::OnBeginOverlap(UPrimitiveComponent*, AActor* Other,
+    UPrimitiveComponent*, int32, bool, const FHitResult&amp;)
+{
+    // Server decides (Lesson 10.1); ignore on clients &amp; if already taken.
+    if (!HasAuthority() || bCollected || !IsValid(Other) || !Data) { return; }
+
+    // Grant to the collector's subsystem (Step 3), if it's a player.
+    if (APawn* Pawn = Cast&lt;APawn&gt;(Other))
+    {
+        if (UGameInstance* GI = GetGameInstance())
+        {
+            if (UCollectionSubsystem* Coll = GI->GetSubsystem&lt;UCollectionSubsystem&gt;())
+            {
+                Coll->AddCollectible(Data->Type, Data->Value);   // authoritative grant
+            }
+        }
+    }
+
+    bCollected = true;         // replicates (Lesson 10.2)
+    MulticastCollectedFX();    // cosmetic for everyone (Lesson 10.3)
+    SetLifeSpan(0.1f);         // let the multicast land, then destroy (Lesson 10.4)
+}
+
+void ACollectibleBase::OnRep_Collected()
+{
+    if (bCollected) { Mesh->SetVisibility(false); }   // hide instantly on clients
+}
+
+void ACollectibleBase::MulticastCollectedFX_Implementation()
+{
+    OnCollectedFX();   // run the designer's Blueprint VFX/SFX on every machine
+}</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ Count the modules in one actor</h4>
+                    <p>Components &amp; construction (3.2), collision (5.1), <code>Cast</code> (2.2), authority (10.1), replication + RepNotify (10.2), multicast (10.3), the destroy-timing trick (10.4), a <code>BlueprintImplementableEvent</code> cosmetic hook (6.1), data-driven visuals (7.1), no-Tick performance (11.2), and the <code>Abstract, Blueprintable</code> base pattern (6.4). Every one is a habit now — you're composing, not recalling.</p>
+                </div>
+            </section>
+
+            <section id="subsystem" class="lesson-section">
+                <h2>Step 3: The Collection Subsystem</h2>
+                <p>The tally lives in a GameInstance subsystem (Module 7) so it persists across levels and is reachable from anywhere. It broadcasts an event (Module 5) whenever the collection changes.</p>
+
+                <pre><code class="language-cpp">// CollectionSubsystem.h
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+    FOnCollectionChanged, ECollectibleType, Type, int32, NewTotal);   // Lesson 5.4
+
+UCLASS()
+class MYPROJECT_API UCollectionSubsystem : public UGameInstanceSubsystem
+{
+    GENERATED_BODY()
+public:
+    UFUNCTION(BlueprintCallable, Category = "Collection")
+    void AddCollectible(ECollectibleType Type, int32 Amount);
+
+    UFUNCTION(BlueprintPure, Category = "Collection")
+    int32 GetCount(ECollectibleType Type) const;
+
+    // Persistence (Lesson 7.3):
+    UFUNCTION(BlueprintCallable, Category = "Collection")
+    void SaveTo(const FString&amp; Slot);
+    UFUNCTION(BlueprintCallable, Category = "Collection")
+    void LoadFrom(const FString&amp; Slot);
+
+    UPROPERTY(BlueprintAssignable, Category = "Collection")
+    FOnCollectionChanged OnCollectionChanged;   // the HUD subscribes to this
+
+private:
+    UPROPERTY()
+    TMap&lt;ECollectibleType, int32&gt; Totals;   // TMap (Lesson 2.4)
+};</code></pre>
+
+                <pre><code class="language-cpp">// CollectionSubsystem.cpp
+void UCollectionSubsystem::AddCollectible(ECollectibleType Type, int32 Amount)
+{
+    int32&amp; Total = Totals.FindOrAdd(Type);
+    Total += Amount;
+    OnCollectionChanged.Broadcast(Type, Total);   // notify listeners (HUD)
+}
+
+int32 UCollectionSubsystem::GetCount(ECollectibleType Type) const
+{
+    const int32* Found = Totals.Find(Type);
+    return Found ? *Found : 0;
+}</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 The subsystem is the hub</h4>
+                    <p>Everything routes through here: the collectible grants to it, the HUD listens to it, the save reads/writes it. Because it's a GameInstance subsystem, the collection survives level transitions (Lesson 7.4), and any system can reach it via <code>GetSubsystem</code>. A clean central service like this — not scattered globals — is what a well-architected feature looks like.</p>
+                </div>
+            </section>
+
+            <section id="ui-save-net" class="lesson-section">
+                <h2>Step 4: HUD, Save &amp; Network</h2>
+                <p>Now the three finishing systems, each a few lines because the groundwork is done.</p>
+
+                <h3>The HUD listens (Module 9)</h3>
+                <pre><code class="language-cpp">void UCollectionHUD::NativeConstruct()
+{
+    Super::NativeConstruct();
+    if (UGameInstance* GI = GetGameInstance())
+    {
+        if (UCollectionSubsystem* Coll = GI->GetSubsystem&lt;UCollectionSubsystem&gt;())
+        {
+            Coll->OnCollectionChanged.AddDynamic(this, &amp;UCollectionHUD::HandleChanged); // 5.4/9.2
+            HandleChanged(ECollectibleType::Coin, Coll->GetCount(ECollectibleType::Coin)); // prime
+        }
+    }
+}
+
+void UCollectionHUD::HandleChanged(ECollectibleType Type, int32 NewTotal)
+{
+    if (CoinText &amp;&amp; Type == ECollectibleType::Coin)   // BindWidget (Lesson 9.1)
+    {
+        CoinText->SetText(FText::AsNumber(NewTotal));
+    }
+}</code></pre>
+
+                <h3>The save persists (Module 7)</h3>
+                <pre><code class="language-cpp">// A USaveGame holds the collection as plain, serializable data (Lesson 7.3).
+void UCollectionSubsystem::SaveTo(const FString&amp; Slot)
+{
+    UCollectionSave* Save = Cast&lt;UCollectionSave&gt;(
+        UGameplayStatics::CreateSaveGameObject(UCollectionSave::StaticClass()));
+    Save->Totals = Totals;                       // copy the map into the save
+    UGameplayStatics::SaveGameToSlot(Save, Slot, 0);
+}
+
+void UCollectionSubsystem::LoadFrom(const FString&amp; Slot)
+{
+    if (!UGameplayStatics::DoesSaveGameExist(Slot, 0)) { return; }
+    if (UCollectionSave* Save = Cast&lt;UCollectionSave&gt;(
+            UGameplayStatics::LoadGameFromSlot(Slot, 0)))
+    {
+        Totals = Save->Totals;
+        // Re-broadcast so the HUD reflects the loaded values:
+        for (const TPair&lt;ECollectibleType, int32&gt;&amp; P : Totals)
+        {
+            OnCollectionChanged.Broadcast(P.Key, P.Value);
+        }
+    }
+}</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ Networking came almost for free</h4>
+                    <p>Notice we barely wrote network code in this step — the collectible actor (Step 2) already handled authority, replication, and multicast. The grant happens on the server; in a full multiplayer build you'd house per-player collections on the <code>PlayerState</code> (Lesson 3.1/10.4) and replicate them, reusing the exact same RepNotify → broadcast → HUD chain. The architecture <em>anticipated</em> multiplayer, so scaling to it is incremental, not a rewrite.</p>
+                </div>
+            </section>
+
+            <section id="designer" class="lesson-section">
+                <h2>Step 5: The Designer's Half</h2>
+                <p>Here's the proof the interop boundary is right — a designer builds real content with <strong>zero C++</strong>:</p>
+
+                <ol>
+                    <li>Create DataAssets: <code>DA_GoldCoin</code> (Coin, value 10), <code>DA_Ruby</code> (Gem, value 50).</li>
+                    <li>Create Blueprint subclasses of <code>ACollectibleBase</code>: <code>BP_GoldCoin</code>, <code>BP_Ruby</code> — assign each its DataAsset.</li>
+                    <li>Implement <code>OnCollectedFX</code> in each Blueprint: spawn a sparkle, play a chime — tuned live, no compile.</li>
+                    <li>Place them around the level, or spawn them from a <code>TSubclassOf&lt;ACollectibleBase&gt;</code> spawner (Lesson 3.4).</li>
+                    <li>Design the Collection HUD widget layout and reparent it to <code>UCollectionHUD</code>.</li>
+                </ol>
+
+                <div class="card card-accent">
+                    <h4>📖 This is the whole thesis of the course</h4>
+                    <p>The programmer owns the mechanics, invariants, networking, and persistence — the things that must be correct. The designer owns the content, feel, and placement — the things that must be iterated. Neither can break the other's work. That division, powered by C++/Blueprint interop, is what makes Unreal teams productive, and it's what you now know how to build. It's the promise from <a href="m01_l01_why_cpp_in_unreal.html">Lesson 1.1</a>, delivered.</p>
+                </div>
+            </section>
+
+            <section id="recap" class="lesson-section">
+                <h2>Every Module, One Feature</h2>
+                <p>Look back at what this single feature touched — the whole course, composed:</p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Module</th><th>What it contributed to the capstone</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>1–2 Foundations</td><td>Classes, reflection, types (<code>TMap</code>, <code>FText</code>), memory (<code>TObjectPtr</code>, GC-safe refs)</td></tr>
+                            <tr><td>3 Gameplay framework</td><td>The collectible actor, components, spawning, communication</td></tr>
+                            <tr><td>4 Input &amp; control</td><td>The player pawn that walks into collectibles</td></tr>
+                            <tr><td>5 Interaction &amp; events</td><td>Collision overlap, the <code>OnCollectionChanged</code> delegate</td></tr>
+                            <tr><td>6 Interop</td><td>The <code>Abstract, Blueprintable</code> base, exposed data, cosmetic events</td></tr>
+                            <tr><td>7 Data &amp; persistence</td><td>The DataAsset, the subsystem hub, the SaveGame</td></tr>
+                            <tr><td>8 Build &amp; plugins</td><td>Could ship as a reusable "CollectibleSystem" plugin</td></tr>
+                            <tr><td>9 UI</td><td>The event-driven collection HUD</td></tr>
+                            <tr><td>10 Networking</td><td>Authority, replication, RepNotify, multicast FX</td></tr>
+                            <tr><td>11 Performance</td><td>No-Tick, event-driven, cache-friendly design</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card card-success">
+                    <h4>✅ You didn't learn 44 tricks — you learned one way of thinking</h4>
+                    <p>The capstone needed no new syntax because the course was never about syntax. It was about a way of building: <strong>C++ for correct mechanics, Blueprint for content; events over polling; the loosest coupling that works; data-driven design; authoritative networking; measured performance.</strong> Those principles composed into this feature, and they'll compose into whatever you build next.</p>
+                </div>
+            </section>
+
+            <section id="conclusion" class="lesson-section">
+                <h2>Course Conclusion</h2>
+
+                <div class="card card-accent" style="padding: 2rem;">
+                    <h3>🎓 You've completed C++ for Unreal Engine</h3>
+                    <p>From "why C++ at all?" to a networked, data-driven, persistent gameplay feature — you've crossed the full distance. You can now:</p>
+                    <ul>
+                        <li>Write idiomatic Unreal C++ that works <em>with</em> the engine's systems, not against them</li>
+                        <li>Design clean C++/Blueprint boundaries that empower designers</li>
+                        <li>Build data-driven, persistent, networked gameplay</li>
+                        <li>Structure, extend, and profile a real project</li>
+                    </ul>
+                    <p>Most importantly, you have the <strong>judgment</strong> to choose the right tool — and that's what separates someone who writes Unreal C++ from someone who <em>engineers</em> with it.</p>
+                </div>
+
+                <h3>🚀 Where to Go Next</h3>
+                <ul>
+                    <li><strong>Build something.</strong> A small complete game teaches more than any lesson. Pick a scope you can finish.</li>
+                    <li><strong>Read engine source.</strong> You now have the vocabulary — step into <code>ACharacter</code>, <code>UGameplayStatics</code>, the movement component, and learn from Epic's own code.</li>
+                    <li><strong>Go deeper on a specialization.</strong> The Gameplay Ability System (GAS), advanced networking &amp; prediction, editor tooling, or Niagara/rendering in C++ are natural next frontiers.</li>
+                    <li><strong>Package a plugin.</strong> Turn a system you love — maybe this collectible system — into a reusable plugin (Module 8) for your next project.</li>
+                </ul>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/programming-with-cplusplus-in-unreal-engine" target="_blank" rel="noopener">Programming with C++ in Unreal Engine (Epic)</a></li>
+                    <li><a href="https://dev.epicgames.com/community/unreal-engine/learning" target="_blank" rel="noopener">Epic Developer Community — Learning</a></li>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/API" target="_blank" rel="noopener">Unreal Engine C++ API Reference</a></li>
+                </ul>
+
+                <div class="card card-success" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Congratulations — you did it!</h3>
+                    <p>Twelve modules, forty-four lessons, one complete feature. You're an Unreal C++ programmer now. Go build something remarkable.</p>
+                    <p style="margin-top: 1rem;"><a href="index.html">↩ Return to Course Home</a></p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m11_l02_profiling_and_optimization.html" class="prev-lesson">← Previous: Profiling &amp; Optimization</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="index.html" class="next-lesson">Finish: Back to Course Home →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

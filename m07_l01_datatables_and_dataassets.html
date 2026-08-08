@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Data-driven design in Unreal Engine 5.8 C++: DataTables with FTableRowBase, DataAssets and PrimaryDataAssets, and when to use each.">
+    <meta name="author" content="Ray de la Paz">
+    <title>DataTables &amp; DataAssets in C++ — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 7</a></li>
+            <li aria-current="page">Lesson 7.1: DataTables &amp; DataAssets in C++</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>🗂️ Lesson 7.1: DataTables &amp; DataAssets in C++</h1>
+                <p class="lead">Great games are data-driven: designers add a new weapon, enemy, or item by editing data, not code. Module 6 exposed your types to the editor; now we store <em>many instances</em> of that data in assets. DataTables and DataAssets are the two workhorses — and knowing which to use is half the skill.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Define a DataTable row struct with <code>FTableRowBase</code></li>
+                        <li>Look up rows by name with <code>FindRow</code> and iterate all rows</li>
+                        <li>Create a <code>UDataAsset</code> for a single configuration object</li>
+                        <li>Choose DataTable vs DataAsset for a given need</li>
+                        <li>Reference these assets from C++ via <code>UPROPERTY</code></li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 60 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#two-tools" class="toc-link">Two Tools for Data</a></li>
+                        <li><a href="#rowstruct" class="toc-link">DataTable Row Structs</a></li>
+                        <li><a href="#lookup" class="toc-link">Looking Up Rows</a></li>
+                        <li><a href="#dataassets" class="toc-link">DataAssets</a></li>
+                        <li><a href="#choosing" class="toc-link">Which One to Use</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="two-tools" class="lesson-section">
+                <h2>Two Tools for Data</h2>
+                <p>Both store designer-edited data as assets, but they're shaped differently:</p>
+
+                <div class="mermaid">
+                    graph TD
+                        DT["DataTable<br/>(a spreadsheet)"] --> R1["Row: Goblin"]
+                        DT --> R2["Row: Skeleton"]
+                        DT --> R3["Row: Dragon"]
+                        DA["DataAsset<br/>(a single config object)"] --> One["One rich configuration<br/>(can hold asset references)"]
+                </div>
+                <figure>
+                    <figcaption>Figure 1: A DataTable is many rows of the same struct (a spreadsheet of enemies). A DataAsset is one configuration object — richer per-instance, referenced individually.</figcaption>
+                </figure>
+
+                <div class="card card-accent">
+                    <h4>📖 The one-line distinction</h4>
+                    <p><strong>DataTable</strong> = "a table of N things sharing one schema," keyed by row name — great for lists you look up (all enemy stats, all items). <strong>DataAsset</strong> = "one configured thing," referenced directly — great when each config is rich, holds asset references, and you point to it specifically (a character preset, a level config). Both are pure data — no behavior.</p>
+                </div>
+            </section>
+
+            <section id="rowstruct" class="lesson-section">
+                <h2>DataTable Row Structs</h2>
+                <p>A DataTable's schema is a <code>USTRUCT</code> that inherits <code>FTableRowBase</code>. Each column is a <code>UPROPERTY</code>; each row an instance.</p>
+
+                <pre><code class="language-cpp">// EnemyRow.h
+#pragma once
+#include "CoreMinimal.h"
+#include "Engine/DataTable.h"      // for FTableRowBase
+#include "EnemyRow.generated.h"
+
+USTRUCT(BlueprintType)
+struct FEnemyRow : public FTableRowBase   // ← inherit FTableRowBase
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy")
+    FText DisplayName;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy")
+    float MaxHealth = 100.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy")
+    float MoveSpeed = 400.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Enemy")
+    TSubclassOf&lt;AActor&gt; EnemyClass;    // asset reference — which BP to spawn
+};</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ Where the table comes from</h4>
+                    <p>In the editor, right-click → Miscellaneous → Data Table, pick <code>FEnemyRow</code> as the row struct, and add rows (or import a CSV/JSON with matching columns). Designers fill in a spreadsheet; your C++ reads it. Note the row struct reuses everything from Module 6 — <code>BlueprintType</code>, <code>TSubclassOf</code>, exposed properties.</p>
+                </div>
+            </section>
+
+            <section id="lookup" class="lesson-section">
+                <h2>Looking Up Rows</h2>
+                <p>Expose a <code>UDataTable*</code> property so a designer assigns the table, then look up rows by their <code>FName</code> key.</p>
+
+                <pre><code class="language-cpp">// A UPROPERTY the designer sets to the DT_Enemies asset:
+UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Data")
+TObjectPtr&lt;UDataTable&gt; EnemyTable;
+
+void ASpawner::SpawnFromRow(FName RowName)
+{
+    if (!EnemyTable) { return; }
+
+    // FindRow returns a pointer to the row struct, or nullptr if the key is absent.
+    static const FString Context = TEXT("Enemy lookup");
+    const FEnemyRow* Row = EnemyTable->FindRow&lt;FEnemyRow&gt;(RowName, Context);
+    if (!Row) { return; }
+
+    // Use the row's data to configure a spawn (Lesson 3.4):
+    if (Row->EnemyClass)
+    {
+        AActor* Enemy = GetWorld()->SpawnActor&lt;AActor&gt;(
+            Row->EnemyClass, GetActorTransform());
+        // ...apply Row->MaxHealth, Row->MoveSpeed to the enemy...
+    }
+}
+
+// Iterate every row:
+TArray&lt;FEnemyRow*&gt; AllRows;
+EnemyTable->GetAllRows&lt;FEnemyRow&gt;(TEXT("Iterate"), AllRows);</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ FindRow returns a pointer — check it, and mind the context string</h4>
+                    <p><code>FindRow</code> gives you a <em>pointer to the row</em> (nullptr if the name isn't in the table) — same "check before use" habit as <code>TMap::Find</code> (Lesson 2.4). The second argument is a context string used only for warning messages when a lookup fails; pass something descriptive so failures are easy to trace in the log.</p>
+                </div>
+            </section>
+
+            <section id="dataassets" class="lesson-section">
+                <h2>DataAssets</h2>
+                <p>A <code>UDataAsset</code> is a standalone asset that <em>is</em> one configuration. You subclass it, add properties, and create instances as assets in the Content Browser. Unlike a DataTable row, a DataAsset is referenced directly and can be as rich as you like.</p>
+
+                <pre><code class="language-cpp">// WeaponDataAsset.h
+#pragma once
+#include "CoreMinimal.h"
+#include "Engine/DataAsset.h"
+#include "WeaponDataAsset.generated.h"
+
+UCLASS(BlueprintType)
+class MYPROJECT_API UWeaponDataAsset : public UDataAsset
+{
+    GENERATED_BODY()
+
+public:
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weapon")
+    FText DisplayName;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weapon")
+    TObjectPtr&lt;USkeletalMesh&gt; Mesh;      // direct asset references are fine here
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weapon")
+    TObjectPtr&lt;USoundBase&gt; FireSound;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weapon")
+    FWeaponStats Stats;                   // reuse the struct from Lesson 6.3
+};</code></pre>
+
+                <pre><code class="language-cpp">// Reference one from a weapon and read it:
+UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Weapon")
+TObjectPtr&lt;UWeaponDataAsset&gt; WeaponData;
+
+void AWeaponBase::ApplyData()
+{
+    if (WeaponData)
+    {
+        Mesh->SetSkeletalMesh(WeaponData->Mesh);
+        Stats = WeaponData->Stats;
+    }
+}</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 DataAsset vs "just a Blueprint default"</h4>
+                    <p>You could also store config on a Blueprint subclass (Lesson 6.4). DataAssets shine when you want to <strong>share</strong> one config across many things, <strong>swap</strong> configs at runtime, or keep data separate from the actor that uses it. For deeper asset-management features (async loading, discovery by type), <code>UPrimaryDataAsset</code> adds an "asset manager" identity — worth knowing exists as you scale.</p>
+                </div>
+            </section>
+
+            <section id="choosing" class="lesson-section">
+                <h2>Which One to Use</h2>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Use a DataTable when…</th><th>Use a DataAsset when…</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>You have many rows of the same schema</td><td>Each config is a distinct, rich object</td></tr>
+                            <tr><td>You look items up by a key (row name)</td><td>You reference the config directly by pointer</td></tr>
+                            <tr><td>Data suits a spreadsheet / CSV import</td><td>Data includes many asset references</td></tr>
+                            <tr><td>e.g. all item stats, loot tables, dialogue lines</td><td>e.g. a weapon preset, a character class, a level config</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <blockquote>
+                    <strong>💡 They combine well.</strong> A common setup: a DataTable of items where each row's <code>UPROPERTY</code> <em>points to</em> a DataAsset for the heavy per-item config. The table gives you the lookup and overview; the DataAssets hold the rich detail. Don't treat it as either/or.</blockquote>
+                </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: An item catalog</h3>
+                    <p><strong>Objective:</strong> Model item data both ways and compare.</p>
+                    <ol>
+                        <li>Define <code>FItemRow : public FTableRowBase</code> with a name, an icon (<code>TObjectPtr&lt;UTexture2D&gt;</code>), a stack size, and a <code>TSubclassOf&lt;AActor&gt; PickupClass</code>.</li>
+                        <li>Write <code>bool GetItem(FName Id, FItemRow&amp; Out) const</code> that looks up a row from a <code>UDataTable*</code> and copies it out (return false if missing).</li>
+                        <li>Now imagine one "legendary sword" with lots of unique asset references (custom mesh, VFX, sound, ability). Would you add it as a row or make a DataAsset? Why?</li>
+                    </ol>
+
+                    <details>
+                        <summary>✅ Lookup &amp; answer</summary>
+                        <pre><code class="language-cpp">bool UItemLibrary::GetItem(FName Id, FItemRow&amp; Out) const
+{
+    if (!ItemTable) { return false; }
+    if (const FItemRow* Row = ItemTable->FindRow&lt;FItemRow&gt;(Id, TEXT("GetItem")))
+    {
+        Out = *Row;
+        return true;
+    }
+    return false;
+}</code></pre>
+                        <p>The legendary sword is a good <strong>DataAsset</strong> — it's one distinct, richly-configured object with many asset references, referenced directly. Common items fit the table's uniform schema.</p>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> A DataTable's row struct must inherit from:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — FTableRowBase makes a struct usable as a DataTable row.">A) <code>FTableRowBase</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="Rows are structs, not actors.">B) <code>AActor</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="That's a component.">C) <code>UActorComponent</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> <code>FindRow</code> returns what when the row name isn't in the table?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — it returns nullptr; always check the pointer.">A) <code>nullptr</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="It doesn't throw.">B) An exception</button>
+                            <button class="quiz-option" data-correct="false" data-hint="It won't fabricate a row.">C) A blank default row</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> One richly-configured object referenced directly (not looked up by key) is best as a:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — a DataAsset suits a single rich config referenced directly.">A) DataAsset</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Tables suit many uniform rows.">B) DataTable row</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Config is for settings, not rich objects.">C) Config variable</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li><strong>DataTable</strong> = many rows of one schema, keyed by row name; the row struct inherits <code>FTableRowBase</code>.</li>
+                        <li>Look up with <code>Table->FindRow&lt;FRow&gt;(Name, Context)</code> (returns a pointer — check it) or iterate with <code>GetAllRows</code>.</li>
+                        <li><strong>DataAsset</strong> (subclass <code>UDataAsset</code>) = one rich configuration object, referenced directly, ideal for many asset references.</li>
+                        <li>Choose by shape: <strong>uniform list looked up by key</strong> → DataTable; <strong>distinct rich config referenced directly</strong> → DataAsset. They combine well.</li>
+                        <li>Both reuse Module 6 interop — <code>BlueprintType</code>, <code>TSubclassOf</code>, exposed properties — to stay designer-editable.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/data-driven-gameplay-elements-in-unreal-engine" target="_blank" rel="noopener">Data-Driven Gameplay Elements (Epic)</a></li>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/data-assets-in-unreal-engine" target="_blank" rel="noopener">Data Assets (Epic)</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p>DataTables and DataAssets hold gameplay data. But some values are <em>settings</em> — volume, difficulty, key bindings — that belong in <code>.ini</code> files and persist between runs. Next: <strong>config properties</strong>.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Lesson complete!</h3>
+                    <p>Your game runs on data. Next, on settings.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m06_l04_cpp_base_blueprint_subclass.html" class="prev-lesson">← Previous: The C++ Base / Blueprint Subclass Pattern</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m07_l02_config_properties.html" class="next-lesson">Next: Config Properties &amp; .ini Files →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

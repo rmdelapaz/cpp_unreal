@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Driving UMG from gameplay in Unreal Engine 5.8 C++: event-driven updates via delegates, binding button OnClicked, and why events beat polling in Tick.">
+    <meta name="author" content="Ray de la Paz">
+    <title>Data Binding &amp; UI Events from C++ — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 9</a></li>
+            <li aria-current="page">Lesson 9.2: Data Binding &amp; UI Events from C++</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>🔄 Lesson 9.2: Data Binding &amp; UI Events from C++</h1>
+                <p class="lead">A HUD is only useful when it reflects the game. This lesson makes your UI <em>live</em> — driven by the gameplay events you built back in Module 5 — and handles input flowing the other way, when the player clicks a button. The secret to clean UI: events, not polling.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Update UMG widgets in response to gameplay delegate broadcasts</li>
+                        <li>Subscribe in <code>NativeConstruct</code> and unsubscribe in <code>NativeDestruct</code></li>
+                        <li>Bind a <code>UButton</code>'s <code>OnClicked</code> event to a C++ handler</li>
+                        <li>Explain why event-driven UI beats polling every frame in <code>NativeTick</code></li>
+                        <li>Wire the health bar to the <code>UHealthComponent</code> from earlier modules</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 60 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#events-vs-poll" class="toc-link">Events vs Polling</a></li>
+                        <li><a href="#subscribe" class="toc-link">Subscribing to Gameplay Events</a></li>
+                        <li><a href="#update" class="toc-link">Updating the Widgets</a></li>
+                        <li><a href="#buttons" class="toc-link">Handling Button Clicks</a></li>
+                        <li><a href="#fullpicture" class="toc-link">The Full Picture</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="events-vs-poll" class="lesson-section">
+                <h2>Events vs Polling</h2>
+                <p>There are two ways a health bar could stay current. Only one is good.</p>
+
+                <div class="mermaid">
+                    graph TD
+                        A["Keep the health bar current"] --> P["Poll: read health every frame in NativeTick"]
+                        A --> E["Event: update only when health CHANGES (OnHealthChanged)"]
+                        P --> Pc["Runs 60+ times/sec even when nothing changed"]
+                        E --> Ec["Runs only on actual changes — efficient &amp; clean"]
+                </div>
+                <figure>
+                    <figcaption>Figure 1: Polling in <code>NativeTick</code> works but wastes work every frame. Event-driven updates fire only when the value actually changes — the pattern the whole course has favored (Lesson 3.5, 5.4).</figcaption>
+                </figure>
+
+                <div class="card card-accent">
+                    <h4>📖 This is the delegate lesson paying off</h4>
+                    <p>Back in Lesson 5.4 you added <code>OnHealthChanged</code> to <code>UHealthComponent</code> precisely so listeners could react without polling. The HUD is that listener. The component broadcasts a change; the widget updates once. No <code>Tick</code>, no wasted frames, and the component still knows nothing about the UI. Event-driven UI is the same decoupling you've applied everywhere — now closing the loop.</p>
+                </div>
+            </section>
+
+            <section id="subscribe" class="lesson-section">
+                <h2>Subscribing to Gameplay Events</h2>
+                <p>In <code>NativeConstruct</code> (the widget's init hook, Lesson 9.1), find the player's health component and subscribe. In <code>NativeDestruct</code>, unsubscribe — the symmetric cleanup discipline from Lessons 2.6 and 5.4.</p>
+
+                <pre><code class="language-cpp">// MyHUDWidget.h
+UFUNCTION()
+void HandleHealthChanged(float NewHealth, float MaxHealth);   // matches the delegate (5.4)
+
+UPROPERTY()
+TObjectPtr&lt;UHealthComponent&gt; TrackedHealth;   // GC-safe reference (Lesson 2.5)</code></pre>
+
+                <pre><code class="language-cpp">// MyHUDWidget.cpp
+void UMyHUDWidget::NativeConstruct()
+{
+    Super::NativeConstruct();
+
+    // Reach the player pawn and its health component (Modules 3-4).
+    if (APawn* Pawn = GetOwningPlayerPawn())
+    {
+        TrackedHealth = Pawn->FindComponentByClass&lt;UHealthComponent&gt;();
+        if (TrackedHealth)
+        {
+            // Subscribe — HandleHealthChanged runs whenever health changes.
+            TrackedHealth->OnHealthChanged.AddDynamic(this, &amp;UMyHUDWidget::HandleHealthChanged);
+
+            // Prime the bar with the current value so it's correct immediately.
+            HandleHealthChanged(TrackedHealth->GetCurrentHealth(),
+                                TrackedHealth->GetMaxHealth());
+        }
+    }
+}
+
+void UMyHUDWidget::NativeDestruct()
+{
+    // Always unbind what we bound (Lesson 5.4 discipline).
+    if (TrackedHealth)
+    {
+        TrackedHealth->OnHealthChanged.RemoveDynamic(this, &amp;UMyHUDWidget::HandleHealthChanged);
+    }
+    Super::NativeDestruct();
+}</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ Prime after subscribing</h4>
+                    <p>Notice we call the handler once right after subscribing, with the current value. Subscriptions only fire on <em>future</em> changes, so without priming, the bar would show its placeholder until the first health change. "Subscribe, then prime with the current state" is the idiom for any event-driven display.</p>
+                </div>
+            </section>
+
+            <section id="update" class="lesson-section">
+                <h2>Updating the Widgets</h2>
+                <p>The handler is where bound widgets (Lesson 9.1) get their new values. It runs only on real changes.</p>
+
+                <pre><code class="language-cpp">void UMyHUDWidget::HandleHealthChanged(float NewHealth, float MaxHealth)
+{
+    if (HealthBar)
+    {
+        // Progress bars take a 0..1 percent.
+        const float Percent = (MaxHealth &gt; 0.0f) ? (NewHealth / MaxHealth) : 0.0f;
+        HealthBar->SetPercent(Percent);
+    }
+
+    if (HealthText)
+    {
+        // Build display text (FText for player-facing, Lesson 2.4).
+        const FText Label = FText::FromString(
+            FString::Printf(TEXT("%.0f / %.0f"), NewHealth, MaxHealth));
+        HealthText->SetText(Label);
+    }
+}</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 Every module shows up here</h4>
+                    <p>This tiny handler uses <code>BindWidget</code> pointers (9.1), a delegate subscription (5.4), the health component (3.3), <code>FindComponentByClass</code> (3.5), <code>FText</code> for display (2.4), and null-guarding (2.5). The HUD is a microcosm of the whole course — which is the point of reaching Module 9: you're assembling, not learning isolated pieces.</p>
+                </div>
+            </section>
+
+            <section id="buttons" class="lesson-section">
+                <h2>Handling Button Clicks</h2>
+                <p>Input flows the other way too: the player clicks a button, and C++ reacts. A <code>UButton</code>'s <code>OnClicked</code> is a dynamic multicast delegate (Lesson 5.4) — bind to it exactly like any other event. The handler for <code>OnClicked</code> takes <em>no</em> parameters.</p>
+
+                <pre><code class="language-cpp">// Header: a bound button + a no-arg UFUNCTION handler.
+UPROPERTY(meta = (BindWidget))
+TObjectPtr&lt;UButton&gt; RestartButton;
+
+UFUNCTION()
+void OnRestartClicked();   // OnClicked passes no arguments</code></pre>
+
+                <pre><code class="language-cpp">void UMyMenuWidget::NativeConstruct()
+{
+    Super::NativeConstruct();
+
+    if (RestartButton)
+    {
+        RestartButton->OnClicked.AddDynamic(this, &amp;UMyMenuWidget::OnRestartClicked);
+    }
+}
+
+void UMyMenuWidget::OnRestartClicked()
+{
+    UE_LOG(LogTemp, Log, TEXT("Restart pressed"));
+    // ...restart the level, e.g. via a subsystem or GameMode...
+    RemoveFromParent();   // close this menu (Lesson 9.1)
+}</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ OnClicked handlers take no parameters — and need <code>UFUNCTION()</code></h4>
+                    <p>Unlike overlap or health handlers, <code>UButton::OnClicked</code> passes nothing — your handler must be a no-arg <code>UFUNCTION()</code> or the <code>AddDynamic</code> bind fails. (There are related events — <code>OnPressed</code>, <code>OnHovered</code>, <code>OnReleased</code> — with their own signatures.) It's the same <code>UFUNCTION</code>-required, signature-must-match rule you learned for all dynamic delegates in Module 5.</p>
+                </div>
+            </section>
+
+            <section id="fullpicture" class="lesson-section">
+                <h2>The Full Picture</h2>
+                <p>Here's the complete data flow of a live HUD, tying gameplay and UI together:</p>
+
+                <div class="mermaid">
+                    graph TD
+                        HC["UHealthComponent<br/>ApplyDamage() changes health"] -->|"OnHealthChanged.Broadcast"| W["HUD widget's HandleHealthChanged"]
+                        W -->|"SetPercent / SetText"| Bar["HealthBar &amp; HealthText update"]
+                        Btn["Player clicks RestartButton"] -->|"OnClicked"| H["OnRestartClicked() in C++"]
+                        H -->|"restart / close"| Game["Gameplay reacts"]
+                </div>
+                <figure>
+                    <figcaption>Figure 2: Data flows up from gameplay to UI via events; input flows down from UI to gameplay via button delegates. Neither side polls the other — everything is event-driven.</figcaption>
+                </figure>
+
+                <div class="card card-success">
+                    <h4>✅ Clean in both directions</h4>
+                    <p>Gameplay → UI is a broadcast the widget subscribes to; UI → gameplay is a button delegate C++ handles. The health component never references the HUD; the button never reaches into gameplay guts beyond calling a clean entry point. This bidirectional, decoupled flow is what a well-built Unreal UI looks like — and it's built entirely from delegates (5.4) and the widget hooks (9.1).</p>
+                </div>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: A live ammo counter</h3>
+                    <p><strong>Objective:</strong> Drive a second widget from a second event.</p>
+                    <ol>
+                        <li>Add an <code>AmmoText</code> <code>BindWidget</code> to the HUD.</li>
+                        <li>In <code>NativeConstruct</code>, find the equipped weapon's <code>OnAmmoChanged</code> event (Lesson 6.4's <code>AWeaponBase</code>) and subscribe a <code>HandleAmmoChanged(int32 NewAmmo)</code>.</li>
+                        <li>Prime it with the current ammo, and unsubscribe in <code>NativeDestruct</code>.</li>
+                        <li>Why subscribe to <code>OnAmmoChanged</code> instead of reading <code>CurrentAmmo</code> in <code>NativeTick</code>?</li>
+                    </ol>
+
+                    <details>
+                        <summary>✅ Answer to Q4</summary>
+                        <p>Ammo changes only when you fire or reload — a handful of times, not every frame. Subscribing means the text updates exactly on those changes; polling in <code>NativeTick</code> would re-read and re-set the text 60+ times a second for no reason, and couples the widget to per-frame execution. Event-driven is both cheaper and cleaner (Figure 1).</p>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> The clean way to keep a health bar current is to:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — subscribe to OnHealthChanged and update on change.">A) Subscribe to the <code>OnHealthChanged</code> event and update on change</button>
+                            <button class="quiz-option" data-correct="false" data-hint="That runs every frame needlessly.">B) Read health every frame in <code>NativeTick</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="A timer polling is still polling.">C) Poll on a 0.1s timer forever</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> After subscribing to <code>OnHealthChanged</code> in <code>NativeConstruct</code>, you should also:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — prime with the current value; subscriptions only fire on future changes.">A) Call the handler once with the current value to prime the display</button>
+                            <button class="quiz-option" data-correct="false" data-hint="It won't back-fire past events.">B) Nothing — it shows the current value automatically</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Don't unsubscribe immediately.">C) Immediately unsubscribe</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> A <code>UButton::OnClicked</code> handler must be:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — a no-argument UFUNCTION().">A) A no-argument <code>UFUNCTION()</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="OnClicked passes no params.">B) A <code>UFUNCTION</code> taking the click position</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Dynamic delegates need UFUNCTION.">C) A plain function, no <code>UFUNCTION</code> needed</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li>Drive UI with <strong>events, not polling</strong>: subscribe to gameplay delegates (<code>OnHealthChanged</code>, <code>OnAmmoChanged</code>) so widgets update only on real changes.</li>
+                        <li>Subscribe in <strong><code>NativeConstruct</code></strong>, unsubscribe in <strong><code>NativeDestruct</code></strong>, and <strong>prime</strong> the display with the current value after subscribing.</li>
+                        <li>Update bound widgets in the handler with <code>SetPercent</code>, <code>SetText</code>, etc.; use <code>FText</code> for player-facing text.</li>
+                        <li>Handle input with <code>UButton::OnClicked.AddDynamic</code> → a <strong>no-argument <code>UFUNCTION()</code></strong>.</li>
+                        <li>Data flows up (gameplay → UI via broadcasts) and input flows down (UI → gameplay via button delegates) — decoupled in both directions.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/creating-widgets-in-unreal-engine" target="_blank" rel="noopener">Creating &amp; Displaying Widgets (Epic)</a></li>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/widget-type-reference-for-umg-ui-designer-in-unreal-engine" target="_blank" rel="noopener">UMG Widget Type Reference (Epic)</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p><strong>Module 9 is complete</strong> — your game has a live, code-driven UI. <strong>Module 10</strong> tackles the biggest remaining topic: <strong>networking &amp; replication</strong> — making your gameplay work in multiplayer, where "authority" and "who owns what" become critical.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Module 9 complete!</h3>
+                    <p>Your UI breathes with the game. Now let's make it multiplayer.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m09_l01_userwidget_in_cpp.html" class="prev-lesson">← Previous: UserWidget &amp; UMG in C++</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m10_l01_multiplayer_model.html" class="next-lesson">Next: The Multiplayer Model →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="The C++ base class / Blueprint subclass pattern in Unreal Engine 5.8: designing a clean C++/Blueprint boundary, Blueprintable base classes, and a complete weapon example.">
+    <meta name="author" content="Ray de la Paz">
+    <title>The C++ Base / Blueprint Subclass Pattern — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 6</a></li>
+            <li aria-current="page">Lesson 6.4: The C++ Base / Blueprint Subclass Pattern</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>🏛️ Lesson 6.4: The C++ Base / Blueprint Subclass Pattern</h1>
+                <p class="lead">This is the pattern the entire course has been building toward — the one that dominates professional Unreal projects. Write the mechanics once in a C++ base class; create many Blueprint subclasses for the content and tuning. We'll assemble a complete weapon system to see every interop tool click into place.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Explain the division of labor between a C++ base and Blueprint subclasses</li>
+                        <li>Design a clean interop surface: what to expose and how</li>
+                        <li>Mark a class <code>Blueprintable</code> / <code>Abstract</code> appropriately</li>
+                        <li>Build a full <code>AWeaponBase</code> that a designer extends into many weapons</li>
+                        <li>State the guidelines that keep the C++/Blueprint boundary healthy</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 60 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#labor" class="toc-link">The Division of Labor</a></li>
+                        <li><a href="#blueprintable" class="toc-link">Blueprintable &amp; Abstract</a></li>
+                        <li><a href="#weaponbase" class="toc-link">Building AWeaponBase</a></li>
+                        <li><a href="#subclass" class="toc-link">The Blueprint Subclass</a></li>
+                        <li><a href="#guidelines" class="toc-link">Boundary Guidelines</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="labor" class="lesson-section">
+                <h2>The Division of Labor</h2>
+                <p>The pattern from Lesson 1.1, now with the vocabulary to build it. A single C++ base class holds the <em>mechanics</em>; each Blueprint subclass supplies the <em>content and tuning</em>.</p>
+
+                <div class="mermaid">
+                    graph TD
+                        Base["AWeaponBase (C++)<br/>fire logic, ammo, reload, damage, cooldown timer"]
+                        Base --> R["BP_Rifle<br/>mesh, stats, VFX, sounds"]
+                        Base --> S["BP_Shotgun<br/>mesh, spread, pellets, VFX"]
+                        Base --> P["BP_Pistol<br/>mesh, stats, VFX"]
+                        Base --> L["BP_Launcher<br/>mesh, projectile, VFX"]
+                </div>
+                <figure>
+                    <figcaption>Figure 1: One C++ base, four Blueprint weapons. Programmers own the mechanics; designers own the arsenal. Adding a fifth weapon is a new Blueprint asset — no C++ change.</figcaption>
+                </figure>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>C++ base owns (mechanics)</th><th>Blueprint subclass owns (content)</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>Fire logic, hit/trace, ammo math</td><td>Which mesh, materials, animations</td></tr>
+                            <tr><td>Reload flow, cooldown timers</td><td>Fire rate, damage, magazine size (tuning)</td></tr>
+                            <tr><td>Damage application</td><td>Muzzle flash, sounds, camera shake</td></tr>
+                            <tr><td>State machine &amp; invariants</td><td>Feel and polish, iterated without compiling</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section id="blueprintable" class="lesson-section">
+                <h2>Blueprintable &amp; Abstract</h2>
+                <p>Two <code>UCLASS</code> specifiers set up the base for subclassing:</p>
+
+                <ul>
+                    <li><strong><code>Blueprintable</code></strong> — allows designers to create Blueprint subclasses of this C++ class. Without it, "Create Blueprint Class based on…" won't offer your class.</li>
+                    <li><strong><code>Abstract</code></strong> — marks the base as not-directly-usable: you can't place a raw <code>AWeaponBase</code> in a level, only its concrete subclasses. This prevents designers from accidentally using the un-configured base.</li>
+                </ul>
+
+                <pre><code class="language-cpp">// A base meant to be subclassed in Blueprint, never used directly.
+UCLASS(Abstract, Blueprintable)
+class MYPROJECT_API AWeaponBase : public AActor
+{
+    GENERATED_BODY()
+    // ...
+};</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ Abstract = "you must subclass me"</h4>
+                    <p><code>Abstract</code> communicates intent and prevents mistakes: a bare <code>AWeaponBase</code> has no mesh and no stats, so placing one would be a bug. Marking it <code>Abstract</code> makes the engine enforce "always use a configured subclass." It's the C++ equivalent of a pure interface you must fill in.</p>
+                </div>
+            </section>
+
+            <section id="weaponbase" class="lesson-section">
+                <h2>Building AWeaponBase</h2>
+                <p>Here's the base, using every interop tool from this module. Header:</p>
+
+                <pre><code class="language-cpp">// WeaponBase.h
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GameFramework/Actor.h"
+#include "WeaponStats.h"     // FWeaponStats + EWeaponType (Lesson 6.3)
+#include "WeaponBase.generated.h"
+
+class USkeletalMeshComponent;
+
+UCLASS(Abstract, Blueprintable)
+class MYPROJECT_API AWeaponBase : public AActor
+{
+    GENERATED_BODY()
+
+public:
+    AWeaponBase();
+
+protected:
+    virtual void BeginPlay() override;
+
+    // ---- Content: designers set these on the Blueprint subclass ----
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon")
+    TObjectPtr&lt;USkeletalMeshComponent&gt; Mesh;
+
+    // Tuning bundled as a struct (Lesson 6.3), edited on the BP default.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
+    FWeaponStats Stats;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon")
+    EWeaponType Type = EWeaponType::Rifle;
+
+    // ---- Runtime state: C++ owns it, BP reads it ----
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State")
+    int32 CurrentAmmo = 0;
+
+public:
+    // ---- Mechanics: BP can trigger, C++ implements (Lesson 6.1) ----
+    UFUNCTION(BlueprintCallable, Category = "Weapon")
+    void Fire();
+
+    UFUNCTION(BlueprintCallable, Category = "Weapon")
+    void Reload();
+
+    UFUNCTION(BlueprintPure, Category = "Weapon")
+    bool CanFire() const;
+
+    // ---- Cosmetic hooks: C++ calls, designers implement in BP ----
+    UFUNCTION(BlueprintImplementableEvent, Category = "Weapon")
+    void OnFired();              // muzzle flash, sound, recoil
+
+    UFUNCTION(BlueprintImplementableEvent, Category = "Weapon")
+    void OnReloadStarted();      // reload animation, sound
+
+    // ---- Event others can subscribe to (Lesson 5.4) ----
+    DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAmmoChanged, int32, NewAmmo);
+    UPROPERTY(BlueprintAssignable, Category = "Weapon")
+    FOnAmmoChanged OnAmmoChanged;
+
+private:
+    FTimerHandle ReloadTimer;    // cooldown/timer (Lesson 5.3)
+};</code></pre>
+
+                <p>Implementation — the mechanics, in C++:</p>
+
+                <pre><code class="language-cpp">// WeaponBase.cpp
+#include "WeaponBase.h"
+#include "Components/SkeletalMeshComponent.h"
+
+AWeaponBase::AWeaponBase()
+{
+    PrimaryActorTick.bCanEverTick = false;
+    Mesh = CreateDefaultSubobject&lt;USkeletalMeshComponent&gt;(TEXT("Mesh"));
+    RootComponent = Mesh;
+}
+
+void AWeaponBase::BeginPlay()
+{
+    Super::BeginPlay();
+    CurrentAmmo = Stats.MagazineSize;   // start full, using the tuned struct
+    OnAmmoChanged.Broadcast(CurrentAmmo);
+}
+
+bool AWeaponBase::CanFire() const
+{
+    return CurrentAmmo &gt; 0;
+}
+
+void AWeaponBase::Fire()
+{
+    if (!CanFire()) { return; }         // enforce the invariant in C++
+
+    --CurrentAmmo;                       // ammo math: mechanics
+    // ...trace or spawn projectile using Stats.Damage (Modules 3-5)...
+
+    OnAmmoChanged.Broadcast(CurrentAmmo);
+    OnFired();                            // let the Blueprint play VFX/SFX
+}
+
+void AWeaponBase::Reload()
+{
+    OnReloadStarted();                    // designer's reload animation/sound
+    // After a delay, refill — timer instead of Tick (Lesson 5.3):
+    GetWorldTimerManager().SetTimer(ReloadTimer, [this]()
+    {
+        CurrentAmmo = Stats.MagazineSize;
+        OnAmmoChanged.Broadcast(CurrentAmmo);
+    }, 2.0f, false);
+}</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ Count the modules in this one class</h4>
+                    <p>Components (M3), timers (5.3), delegates (5.4), <code>BlueprintCallable</code>/<code>Pure</code>/<code>ImplementableEvent</code> (6.1), exposed properties (6.2), and a <code>BlueprintType</code> struct + enum (6.3) — all working together. This is what "the course keeps building on itself" was for: the finale isn't new syntax, it's <em>composition mastery</em>.</p>
+                </div>
+            </section>
+
+            <section id="subclass" class="lesson-section">
+                <h2>The Blueprint Subclass</h2>
+                <p>Now the designer's half — <strong>no C++ required</strong>. In the editor: <strong>right-click <code>AWeaponBase</code> in the C++ Classes folder → Create Blueprint class based on WeaponBase → name it <code>BP_Rifle</code></strong>. Then they:</p>
+
+                <ol>
+                    <li>Set the <strong>Mesh</strong>'s skeletal mesh to the rifle model.</li>
+                    <li>Fill in <strong>Stats</strong> (Damage 30, FireRate 8, MagazineSize 30) on the default.</li>
+                    <li>Set <strong>Type</strong> to <em>Assault Rifle</em> from the dropdown.</li>
+                    <li>Implement <strong>OnFired</strong> in the Event Graph: spawn muzzle flash, play sound, add recoil.</li>
+                    <li>Implement <strong>OnReloadStarted</strong>: play the reload montage.</li>
+                </ol>
+
+                <div class="card card-accent">
+                    <h4>📖 What the designer never touches</h4>
+                    <p>Ammo counting, the fire invariant (<code>CanFire</code>), the reload timer, damage application — all live safely in C++, identical across every weapon. A designer can't accidentally break "you can't fire with zero ammo" because that logic isn't in Blueprint. They get total freedom over <em>content</em> and zero ability to break <em>mechanics</em>. That's the pattern's superpower.</p>
+                </div>
+
+                <div class="card card-success">
+                    <h4>✅ Ten weapons, one class</h4>
+                    <p><code>BP_Shotgun</code>, <code>BP_Pistol</code>, <code>BP_Sniper</code>… each is a Blueprint asset over the same <code>AWeaponBase</code>, differing only in data and cosmetic events. Balancing the arsenal is editing numbers in Blueprint defaults — fast iteration, no recompiles, no programmer bottleneck. This is why studios structure code this way.</p>
+                </div>
+            </section>
+
+            <section id="guidelines" class="lesson-section">
+                <h2>Boundary Guidelines</h2>
+                <p>Principles that keep the C++/Blueprint boundary healthy as a project grows:</p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Do ✅</th><th>Avoid ❌</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>Keep invariants &amp; hot logic in C++</td><td>Putting core rules in Blueprint where they can be broken</td></tr>
+                            <tr><td>Expose cosmetic hooks as <code>ImplementableEvent</code></td><td>Hardcoding VFX/SFX in C++ (kills designer iteration)</td></tr>
+                            <tr><td>Bundle tuning in <code>BlueprintType</code> structs</td><td>Dozens of loose exposed floats</td></tr>
+                            <tr><td>Guard state: read-only + validated setters</td><td>Blanket <code>BlueprintReadWrite</code> on everything</td></tr>
+                            <tr><td>Mark reusable bases <code>Abstract, Blueprintable</code></td><td>Letting designers place un-configured bases</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <blockquote>
+                    <strong>💡 The guiding question:</strong> for each piece of a feature, ask "should a designer be able to change this without a programmer, and without being able to break the rules?" If yes → expose it (property or cosmetic event). If it's a rule that must always hold → keep it in C++. Draw the boundary there, and your C++ empowers designers instead of fighting them.</blockquote>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: Design an APickupBase</h3>
+                    <p><strong>Objective:</strong> Apply the pattern to the pickup you've built across the course.</p>
+                    <ol>
+                        <li>Sketch <code>APickupBase</code> (<code>Abstract, Blueprintable</code>) with: a collision component + mesh (C++), an <code>FPickupEffect</code> struct exposed on the BP default (6.3), the overlap-grant-destroy mechanic in C++ (5.1), and a <code>BlueprintImplementableEvent OnCollected()</code> for the pickup VFX/SFX.</li>
+                        <li>List what <code>BP_HealthPickup</code>, <code>BP_AmmoPickup</code>, and <code>BP_CoinPickup</code> each set — with no C++ changes.</li>
+                        <li>Which part must stay in C++ so a designer can't break it?</li>
+                    </ol>
+
+                    <details>
+                        <summary>✅ Answer sketch</summary>
+                        <ul>
+                            <li>C++: the sphere overlap handler that checks capability, applies <code>PickupEffect</code>, calls <code>OnCollected()</code>, and <code>Destroy()</code>s.</li>
+                            <li>Each BP subclass sets: the mesh, the <code>FPickupEffect</code> (kind + amount), and implements <code>OnCollected</code> (particle + sound).</li>
+                            <li>The overlap-grant-destroy <em>flow</em> stays in C++ so no pickup can, say, grant twice or fail to destroy — the invariant is protected.</li>
+                        </ul>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> In the pattern, what does the C++ base class own?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — the base owns mechanics, logic, and invariants.">A) The mechanics, logic, and invariants</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Meshes/VFX are the subclass's job.">B) The specific mesh, VFX, and sounds</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Tuning numbers live on the BP default.">C) The per-weapon balance numbers</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> Which specifiers set up a base to be subclassed in Blueprint but never placed directly?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — Abstract prevents direct use; Blueprintable allows BP subclasses.">A) <code>UCLASS(Abstract, Blueprintable)</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="That's a component specifier.">B) <code>meta = (BlueprintSpawnableComponent)</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="NotBlueprintable would block subclassing.">C) <code>UCLASS(NotBlueprintable)</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> A designer wants custom muzzle-flash VFX per weapon. You should expose:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — a BlueprintImplementableEvent the C++ Fire() calls lets designers author VFX.">A) A <code>BlueprintImplementableEvent OnFired()</code> that C++ calls</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Hardcoding kills iteration.">B) Nothing — hardcode the VFX in C++</button>
+                            <button class="quiz-option" data-correct="false" data-hint="A pure getter can't drive effects.">C) A <code>BlueprintPure</code> getter</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li>The dominant Unreal pattern: <strong>C++ base class of mechanics + Blueprint subclasses of content/tuning</strong>.</li>
+                        <li>Mark reusable bases <code>UCLASS(Abstract, Blueprintable)</code> — subclassable in Blueprint, never placed raw.</li>
+                        <li>Keep <strong>invariants, hot logic, and state</strong> in C++; expose <strong>tuning</strong> (properties/structs) and <strong>cosmetics</strong> (<code>ImplementableEvent</code>) to Blueprint.</li>
+                        <li>A single well-designed base yields <strong>many Blueprint variants</strong> — new content is a new asset, no recompile, no programmer bottleneck.</li>
+                        <li>Draw the boundary by asking: "should a designer change this freely, without being able to break the rules?"</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/creating-and-using-cplusplus-and-blueprints-together-in-unreal-engine" target="_blank" rel="noopener">Using C++ and Blueprints Together (Epic)</a></li>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/gameplay-classes-in-unreal-engine" target="_blank" rel="noopener">Gameplay Classes (Epic)</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p><strong>Module 6 — the heart of the course — is complete.</strong> You can now make C++ and Blueprint one seamless workflow. <strong>Module 7</strong> takes the data-driven idea further: DataTables, DataAssets, config, saving/loading, and Subsystems — driving whole games from data.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Module 6 complete — the keystone is set!</h3>
+                    <p>C++ and Blueprint now work as one. Let's make your game data-driven.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m06_l03_exposing_structs_enums_data.html" class="prev-lesson">← Previous: Exposing Structs, Enums &amp; Data</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m07_l01_datatables_and_dataassets.html" class="next-lesson">Next: DataTables &amp; DataAssets in C++ →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>
