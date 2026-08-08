@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="The Unreal Engine 5.8 gameplay framework map: Actor, Pawn, Character, Controller, GameMode, GameState, PlayerState — what each class is for and how they connect.">
+    <meta name="author" content="Ray de la Paz">
+    <title>The Gameplay Framework Map — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 3</a></li>
+            <li aria-current="page">Lesson 3.1: The Gameplay Framework Map</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>🗺️ Lesson 3.1: The Gameplay Framework Map</h1>
+                <p class="lead">Unreal ships a set of gameplay classes that fit together in a specific way — Actor, Pawn, Character, Controller, GameMode, and more. Learn the map now and every later lesson has a home. Fight the map, and you'll reinvent what the engine already gives you.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Name the core gameplay framework classes and state each one's job</li>
+                        <li>Distinguish a Pawn (the body) from a Controller (the brain)</li>
+                        <li>Explain what GameMode, GameState, and PlayerState hold and where they live</li>
+                        <li>Trace how these classes connect during play</li>
+                        <li>Choose the right base class for a new gameplay object</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 45 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#actor-root" class="toc-link">Actor: The Root of It All</a></li>
+                        <li><a href="#pawn-controller" class="toc-link">Pawn &amp; Controller</a></li>
+                        <li><a href="#character" class="toc-link">Character</a></li>
+                        <li><a href="#rules" class="toc-link">GameMode, GameState, PlayerState</a></li>
+                        <li><a href="#bigpicture" class="toc-link">The Whole Map</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="actor-root" class="lesson-section">
+                <h2>Actor: The Root of It All</h2>
+                <p>An <strong><code>AActor</code></strong> is anything that can be placed in or spawned into a level. If it exists in the world, it's an actor: a wall, a light, a pickup, a character, a trigger volume. Actors have a transform (location, rotation, scale) and can hold <em>components</em> (Module 3.3) that give them concrete abilities — a mesh, a collision shape, a light.</p>
+
+                <div class="card card-accent">
+                    <h4>📖 Actor = container + transform</h4>
+                    <p>An actor by itself is nearly empty. Its capabilities come from the <strong>components</strong> attached to it. A "cube in the world" is an actor with a static mesh component; a "character" is an actor with a mesh, a collision capsule, and a movement component. Think of the actor as the thing, and components as its organs.</p>
+                </div>
+
+                <p>Nearly every gameplay class you'll write descends from <code>AActor</code>. The framework classes below are specialized actors (or their non-actor helpers) with roles the engine already understands.</p>
+            </section>
+
+            <section id="pawn-controller" class="lesson-section">
+                <h2>Pawn &amp; Controller</h2>
+                <p>This is the distinction newcomers most often miss, and it's the key to the whole framework: <strong>the body and the brain are separate objects.</strong></p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Class</th><th>Role</th><th>Analogy</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>APawn</code></td><td>A <strong>body</strong> that can be possessed and controlled — has a physical presence in the world</td><td>The car</td></tr>
+                            <tr><td><code>AController</code></td><td>The <strong>brain</strong> that possesses and drives a Pawn</td><td>The driver</td></tr>
+                            <tr><td><code>APlayerController</code></td><td>A Controller driven by a <strong>human</strong> (reads input)</td><td>A human driver</td></tr>
+                            <tr><td><code>AAIController</code></td><td>A Controller driven by <strong>AI</strong> (behavior trees, logic)</td><td>An autopilot</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="mermaid">
+                    graph LR
+                        PC["APlayerController<br/>(human brain)"] -->|possesses| P1["APawn / ACharacter<br/>(body)"]
+                        AI["AAIController<br/>(AI brain)"] -->|possesses| P2["APawn<br/>(body)"]
+                </div>
+                <figure>
+                    <figcaption>Figure 1: Controllers <em>possess</em> Pawns. The same Pawn body can be driven by a player or by AI just by swapping which Controller possesses it.</figcaption>
+                </figure>
+
+                <div class="card card-success">
+                    <h4>✅ Why separate them?</h4>
+                    <p>Because it's powerful. A player can possess different bodies (walk out of a character and into a turret or vehicle). An enemy body can be handed from AI control to player control. Input handling and persistent player data live on the Controller, so they survive even when the Pawn dies and respawns. This separation is a feature, not overhead.</p>
+                </div>
+            </section>
+
+            <section id="character" class="lesson-section">
+                <h2>Character</h2>
+                <p><strong><code>ACharacter</code></strong> is a specialized Pawn built for humanoid, walking movement. It comes pre-assembled with three components you'd otherwise wire up yourself:</p>
+                <ul>
+                    <li>A <strong>Capsule Component</strong> for collision (the pill shape around a humanoid)</li>
+                    <li>A <strong>Skeletal Mesh Component</strong> for the animated character model</li>
+                    <li>A <strong>Character Movement Component</strong> — walking, jumping, falling, swimming, networked and battle-tested</li>
+                </ul>
+
+                <div class="mermaid">
+                    graph TD
+                        A["AActor"] --> P["APawn"]
+                        P --> C["ACharacter"]
+                        C --> Cap["+ Capsule (collision)"]
+                        C --> Mesh["+ Skeletal Mesh"]
+                        C --> Move["+ Character Movement Component"]
+                </div>
+                <figure>
+                    <figcaption>Figure 2: <code>ACharacter</code> is a Pawn with a standard humanoid loadout already attached. Use it when your Pawn walks like a person; use a bare Pawn for vehicles, flying, or custom movement.</figcaption>
+                </figure>
+
+                <blockquote>
+                    <strong>💡 Choosing your base:</strong> humanoid on foot → <code>ACharacter</code>. A vehicle, spaceship, floating turret, or anything with non-standard movement → <code>APawn</code> (add your own movement). Something in the world that isn't controlled at all → plain <code>AActor</code>.
+                </blockquote>
+            </section>
+
+            <section id="rules" class="lesson-section">
+                <h2>GameMode, GameState, PlayerState</h2>
+                <p>Beyond individual bodies and brains, three classes hold the <em>rules and state of the match itself</em>:</p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Class</th><th>Holds</th><th>Lives where</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>AGameModeBase</code></td><td>The <strong>rules</strong>: which classes to use, spawn logic, win/lose conditions</td><td>Server only (authority)</td></tr>
+                            <tr><td><code>AGameStateBase</code></td><td>The <strong>shared match state</strong>: score, time left, list of players</td><td>Exists on server &amp; all clients (replicated)</td></tr>
+                            <tr><td><code>APlayerState</code></td><td><strong>Per-player state</strong> that outlives the Pawn: name, score, team</td><td>One per player, replicated</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card card-warning">
+                    <h4>⚠️ GameMode is server-authoritative</h4>
+                    <p>The <strong>GameMode exists only on the server/host</strong> — clients never have one. That's deliberate: rules and spawn decisions are authoritative and must not be client-editable. When you need something clients can see (the score), it belongs on <strong>GameState</strong>, not GameMode. This distinction becomes critical in Module 10 (networking); we plant it now so the classes make sense.</p>
+                </div>
+
+                <div class="card card-accent">
+                    <h4>📖 PlayerState outlives the Pawn</h4>
+                    <p>When a player's character dies and respawns, the Pawn is destroyed and recreated — but their <strong>score and name must persist</strong>. That's why they live on <code>APlayerState</code> (tied to the player) rather than on the Pawn (tied to a body). Same reasoning as Pawn/Controller separation: durable data lives on the durable object.</p>
+                </div>
+            </section>
+
+            <section id="bigpicture" class="lesson-section">
+                <h2>The Whole Map</h2>
+                <p>Here's how the pieces connect during a live game:</p>
+
+                <div class="mermaid">
+                    graph TD
+                        GM["AGameModeBase<br/>rules (server only)"] --> GS["AGameStateBase<br/>shared match state"]
+                        GM --> Spawn["spawns &amp; possesses"]
+                        Spawn --> PC["APlayerController<br/>(brain)"]
+                        PC -->|possesses| Char["ACharacter<br/>(body)"]
+                        PC --> PS["APlayerState<br/>per-player data"]
+                        Char --> Comp["Components:<br/>mesh, capsule, movement"]
+                        GS --> World["Level / World<br/>holds all Actors"]
+                </div>
+                <figure>
+                    <figcaption>Figure 3: The gameplay framework in motion. The GameMode sets the rules and spawns players; a PlayerController possesses a Character; the PlayerState carries durable per-player data; GameState holds what everyone shares.</figcaption>
+                </figure>
+
+                <div class="card card-success">
+                    <h4>✅ The payoff</h4>
+                    <p>Unreal gives you all of this for free. When you make a project, a default GameMode, PlayerController, and Pawn already exist. Your job is to <em>subclass</em> the ones you need to customize — set your Character class on your GameMode, add score to your PlayerState — not to rebuild the framework. We do exactly that across Modules 3, 4, and 10.</p>
+                </div>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: Place things on the map</h3>
+                    <p><strong>Objective:</strong> Assign each requirement to the correct framework class.</p>
+                    <ol>
+                        <li>The player's on-foot humanoid body</li>
+                        <li>The logic that reads the gamepad and tells the body to move</li>
+                        <li>The current team score, visible to every player</li>
+                        <li>The rule "respawn a dead player after 5 seconds at a spawn point"</li>
+                        <li>A player's kill count that must survive their character dying</li>
+                    </ol>
+
+                    <details>
+                        <summary>✅ Answers</summary>
+                        <ul>
+                            <li><strong>1.</strong> <code>ACharacter</code> (a Pawn specialized for walking).</li>
+                            <li><strong>2.</strong> <code>APlayerController</code> (the human brain; reads input).</li>
+                            <li><strong>3.</strong> <code>AGameStateBase</code> (shared, replicated match state).</li>
+                            <li><strong>4.</strong> <code>AGameModeBase</code> (server-only rules &amp; spawning).</li>
+                            <li><strong>5.</strong> <code>APlayerState</code> (per-player data that outlives the Pawn).</li>
+                        </ul>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> What is the relationship between a Controller and a Pawn?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — the Controller (brain) possesses the Pawn (body).">A) The Controller possesses and drives the Pawn</button>
+                            <button class="quiz-option" data-correct="false" data-hint="It's the other way around.">B) The Pawn creates and owns the Controller</button>
+                            <button class="quiz-option" data-correct="false" data-hint="They're distinct objects.">C) They're the same object</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> Which class exists <em>only on the server</em>?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="That's replicated to everyone.">A) GameState</button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — GameMode holds authoritative rules and exists only on the server.">B) GameMode</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Each player has one, replicated.">C) PlayerState</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> You're building a flying spaceship the player controls. Best base class?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="Character is for humanoid walking movement.">A) <code>ACharacter</code></button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — a Pawn with custom movement suits non-humanoid control.">B) <code>APawn</code> with custom movement</button>
+                            <button class="quiz-option" data-correct="false" data-hint="A Controller is the brain, not the body.">C) <code>APlayerController</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li><strong><code>AActor</code></strong> is anything in the world — a container with a transform whose abilities come from <strong>components</strong>.</li>
+                        <li><strong>Pawn (body) and Controller (brain) are separate</strong>: a Controller <em>possesses</em> a Pawn; <code>APlayerController</code> is human-driven, <code>AAIController</code> is AI-driven.</li>
+                        <li><strong><code>ACharacter</code></strong> is a Pawn pre-loaded with capsule, skeletal mesh, and movement — use it for humanoids, a bare Pawn otherwise.</li>
+                        <li><strong>GameMode</strong> (server-only rules), <strong>GameState</strong> (shared replicated state), and <strong>PlayerState</strong> (durable per-player data) hold the match itself.</li>
+                        <li>Durable data lives on durable objects — that's why score is on PlayerState, not the Pawn.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/gameplay-framework-in-unreal-engine" target="_blank" rel="noopener">Gameplay Framework (Epic)</a></li>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/pawn-in-unreal-engine" target="_blank" rel="noopener">Pawn, Character &amp; Controller (Epic)</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p>Enough map-reading — time to build. Next we write real Actors in C++: creating them, adding components, and hooking into the lifecycle functions (<code>constructor</code>, <code>BeginPlay</code>, <code>Tick</code>, <code>EndPlay</code>) you met briefly in Module 1.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Lesson complete!</h3>
+                    <p>You hold the map. Let's start constructing what goes on it.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m02_l06_logging_asserts_debugging.html" class="prev-lesson">← Previous: Logging, Assertions &amp; Debugging</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m03_l02_writing_actors_in_cpp.html" class="next-lesson">Next: Writing Actors in C++ →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Why C++ matters in Unreal Engine 5.8, how it compares to Blueprint, and the hybrid workflow professional teams actually use.">
+    <meta name="author" content="Ray de la Paz">
+    <title>Why C++ in Unreal — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <!-- Mermaid — initialized by course-enhancements.js for theme awareness -->
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <!-- Navigation -->
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Breadcrumb -->
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 1</a></li>
+            <li aria-current="page">Lesson 1.1: Why C++ in Unreal</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>🎮 Lesson 1.1: Why C++ in Unreal — C++ vs Blueprint &amp; the Hybrid Model</h1>
+                <p class="lead">Before you write a single line of Unreal C++, it's worth knowing <em>why</em> — and just as importantly, <em>when not to</em>. This lesson frames the whole course: what C++ buys you, what Blueprint does better, and the hybrid workflow real teams ship with.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Explain what C++ gives you in Unreal that Blueprint cannot</li>
+                        <li>Describe the trade-offs between C++ and Blueprint across performance, iteration speed, and team roles</li>
+                        <li>Decide, for a given feature, whether it belongs in C++, Blueprint, or both</li>
+                        <li>Recognize the "C++ base class, Blueprint subclass" pattern that underpins professional projects</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 45 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#intro" class="toc-link">Two Ways to Program Unreal</a></li>
+                        <li><a href="#what-cpp-buys" class="toc-link">What C++ Buys You</a></li>
+                        <li><a href="#what-blueprint-buys" class="toc-link">What Blueprint Buys You</a></li>
+                        <li><a href="#hybrid" class="toc-link">The Hybrid Model</a></li>
+                        <li><a href="#decide" class="toc-link">Deciding Where Code Goes</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="intro" class="lesson-section">
+                <h2>Two Ways to Program Unreal</h2>
+                <p>Unreal Engine gives you two first-class ways to express game logic, and they run on the same foundation. <strong>Blueprint</strong> is a visual scripting language: you wire nodes together in a graph editor. <strong>C++</strong> is the native language the engine itself is written in. Neither is a toy — Blueprint is used to ship AAA titles, and C++ is what the entire engine, including Blueprint's own runtime, is built from.</p>
+
+                <p>The key insight that makes this course make sense: <strong>Blueprint is not separate from C++ — it sits on top of it.</strong> Every Blueprint node ultimately calls into C++. When you write a C++ function and mark it correctly, it can <em>become</em> a Blueprint node. The two are layers of one system, not rival ecosystems.</p>
+
+                <div class="mermaid">
+                    graph TD
+                        A["Your Game Logic"] --> B["Blueprint Graphs"]
+                        A --> C["C++ Classes"]
+                        B --> D["Unreal Reflection System"]
+                        C --> D
+                        D --> E["Engine Runtime (C++)"]
+                        E --> F["Rendering, Physics, Audio, Networking"]
+                </div>
+                <figure>
+                    <figcaption>Figure 1: Blueprint and C++ are two entry points into the same engine. The reflection system (Module 2) is the bridge that lets them see each other.</figcaption>
+                </figure>
+
+                <blockquote>
+                    <strong>💬 The mental model:</strong> Ask not "should I use C++ or Blueprint?" but "which layer does <em>this particular thing</em> belong in?" Most real features live in both.
+                </blockquote>
+            </section>
+
+            <section id="what-cpp-buys" class="lesson-section">
+                <h2>What C++ Buys You</h2>
+                <p>Teams reach for C++ when they need one or more of the following:</p>
+
+                <h3>1. Performance</h3>
+                <p>Blueprint graphs are interpreted by the Blueprint VM at runtime. That overhead is negligible for high-level logic (an on/off switch, a UI click) but real for code that runs thousands of times per frame — tight loops, per-frame math, large data processing. Native C++ compiles straight to machine code with no VM in the path.</p>
+
+                <div class="card card-success">
+                    <h4>✅ Rule of thumb</h4>
+                    <p>If it runs <strong>once per interaction</strong>, Blueprint's cost is invisible. If it runs <strong>every tick, for every actor, in a loop</strong>, C++ is where it belongs.</p>
+                </div>
+
+                <h3>2. Engine features Blueprint doesn't expose</h3>
+                <p>Not every engine capability has a Blueprint node. Custom <code>USceneComponent</code> subclasses, editor tooling, low-level networking control, template-based systems, integration with third-party C++ libraries, and many subsystems are reachable only from C++. When you hit a wall in Blueprint, C++ is usually the way through.</p>
+
+                <h3>3. Reusable, source-controlled architecture</h3>
+                <p>C++ is plain text. It diffs cleanly, merges in Git, code-reviews well, and refactors with an IDE. Blueprints are binary assets — harder to diff and merge, and prone to painful conflicts on a team. Foundational systems that many people touch are calmer to maintain in C++.</p>
+
+                <h3>4. Strong typing and compile-time safety</h3>
+                <p>The C++ compiler catches whole classes of errors before you ever press Play. A renamed function, a wrong type, a missing argument — these become build errors, not mysterious runtime failures discovered three levels deep in a graph.</p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Need</th><th>Why C++ wins</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>Per-frame / per-actor hot code</td><td>No VM overhead; compiles to native</td></tr>
+                            <tr><td>Base classes for a whole team</td><td>Text diffs, merges, code review</td></tr>
+                            <tr><td>Engine internals &amp; custom components</td><td>Full API surface, not just exposed nodes</td></tr>
+                            <tr><td>Third-party library integration</td><td>Direct linking via the build system</td></tr>
+                            <tr><td>Large refactors</td><td>Compiler + IDE catch breakage early</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section id="what-blueprint-buys" class="lesson-section">
+                <h2>What Blueprint Buys You</h2>
+                <p>C++ is not "better" — it is a different tool. Blueprint has genuine, hard-to-beat advantages:</p>
+
+                <h3>1. Iteration speed</h3>
+                <p>Change a Blueprint, press Play, see the result — no compile, no engine restart. For tuning gameplay feel, wiring up level events, or prototyping, that loop is dramatically faster than even Live Coding in C++.</p>
+
+                <h3>2. Designer and artist accessibility</h3>
+                <p>Not everyone on a game team writes C++. Blueprint lets designers, technical artists, and animators build and tune logic without touching native code. A well-designed C++ foundation <em>exposes knobs</em> that non-programmers turn in Blueprint.</p>
+
+                <h3>3. Visual data flow</h3>
+                <p>Some things really are clearer as a graph: state machines, animation logic, sequences of timed events. The visual representation <em>is</em> the documentation.</p>
+
+                <div class="card card-warning">
+                    <h4>⚠️ A common beginner mistake</h4>
+                    <p>Rewriting <em>everything</em> in C++ "because it's faster" is a trap. You'll trade away iteration speed and designer access for performance you didn't need. Optimize where it counts; leave the rest in Blueprint.</p>
+                </div>
+            </section>
+
+            <section id="hybrid" class="lesson-section">
+                <h2>The Hybrid Model</h2>
+                <p>The pattern that dominates professional Unreal projects is deceptively simple:</p>
+
+                <div class="card card-accent">
+                    <h4>📖 The core pattern</h4>
+                    <p><strong>Write the foundation in C++. Extend and configure it in Blueprint.</strong></p>
+                </div>
+
+                <p>Concretely: you write a C++ class — say, a <code>AWeaponBase</code> actor — that implements the mechanics (firing logic, ammo tracking, damage application) as fast, robust native code. You expose a handful of properties and events to Blueprint. Then a designer creates a <em>Blueprint subclass</em>, <code>BP_Rifle</code>, and sets the mesh, fire rate, sound, and muzzle effect — no C++ required. Ten weapons become ten Blueprint assets over one C++ class.</p>
+
+                <div class="mermaid">
+                    graph TD
+                        CPP["AWeaponBase (C++)<br/>firing logic, ammo, damage"] --> BP1["BP_Rifle<br/>mesh, fire rate, VFX"]
+                        CPP --> BP2["BP_Shotgun<br/>mesh, spread, VFX"]
+                        CPP --> BP3["BP_Pistol<br/>mesh, sound, VFX"]
+                </div>
+                <figure>
+                    <figcaption>Figure 2: One C++ base class, many Blueprint variants. The programmer owns the mechanics; the designer owns the content and tuning. We build exactly this pattern in Module 6.</figcaption>
+                </figure>
+
+                <p>This is the heart of "C++ <em>with</em> and <em>for</em> Unreal," and it's why the whole course keeps circling back to interop. C++ that no one can extend from Blueprint is often C++ working against the grain of the engine.</p>
+            </section>
+
+            <section id="decide" class="lesson-section">
+                <h2>Deciding Where Code Goes</h2>
+                <p>Here's a practical decision flow you can apply to any feature:</p>
+
+                <div class="mermaid">
+                    graph TD
+                        Start["New feature"] --> Q1{"Runs every frame<br/>or in a hot loop?"}
+                        Q1 -->|Yes| CPP["Implement in C++"]
+                        Q1 -->|No| Q2{"Needs an engine feature<br/>with no Blueprint node?"}
+                        Q2 -->|Yes| CPP
+                        Q2 -->|No| Q3{"Will designers tune<br/>or reskin it often?"}
+                        Q3 -->|Yes| BP["Blueprint (over a C++ base if it has real mechanics)"]
+                        Q3 -->|No| Q4{"Shared foundation<br/>many people build on?"}
+                        Q4 -->|Yes| CPP
+                        Q4 -->|No| BP
+                </div>
+                <figure>
+                    <figcaption>Figure 3: A pragmatic router. Notice how often the answer is "C++ base + Blueprint on top" rather than one or the other.</figcaption>
+                </figure>
+
+                <div class="card card-success">
+                    <h4>✅ Pro Tip</h4>
+                    <p>When unsure, start in Blueprint to find the fun, then <em>migrate the stable, hot, or shared parts</em> down into C++ once the design settles. Prototyping in Blueprint and hardening in C++ is a legitimate, widely-used workflow — not a failure.</p>
+                </div>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: Route five features</h3>
+                    <p><strong>Objective:</strong> Practice the decision model — no code yet, just judgment.</p>
+                    <p>For each feature below, decide: <strong>C++</strong>, <strong>Blueprint</strong>, or <strong>C++ base + Blueprint subclass</strong>. Jot a one-line reason.</p>
+                    <ol>
+                        <li>A pathfinding cost calculation that runs for hundreds of AI agents every frame</li>
+                        <li>A main-menu button that starts the game</li>
+                        <li>A family of pickup items (health, ammo, coin) sharing "on overlap, grant something, play a sound, destroy self"</li>
+                        <li>Integrating a third-party C++ analytics SDK</li>
+                        <li>A door that plays an open animation when the player is near</li>
+                    </ol>
+
+                    <details>
+                        <summary>💡 Hint</summary>
+                        <p>Run each through Figure 3. Watch for the word "hundreds… every frame," for "third-party C++," and for "a family of items that share behavior but differ in content."</p>
+                    </details>
+
+                    <details>
+                        <summary>✅ Suggested answers</summary>
+                        <ul>
+                            <li><strong>1 — C++.</strong> Hot, per-agent, per-frame math. Classic VM-overhead territory.</li>
+                            <li><strong>2 — Blueprint.</strong> Runs once on click; iteration speed and designer access win.</li>
+                            <li><strong>3 — C++ base + Blueprint subclasses.</strong> <code>APickupBase</code> owns the overlap/grant/destroy mechanic; <code>BP_HealthPickup</code> etc. set the mesh, sound, and amount. This is Module 6 in miniature.</li>
+                            <li><strong>4 — C++.</strong> Third-party C++ libraries link through the build system; Blueprint can't reach them directly (Module 8).</li>
+                            <li><strong>5 — Blueprint.</strong> Occasional, designer-tuned, visual event flow. No performance concern.</li>
+                        </ul>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> Why can a C++ function become a Blueprint node?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="Blueprint isn't a separate engine.">A) Blueprint runs on a different engine that imports C++</button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — the reflection system (UCLASS/UFUNCTION, covered in Module 2) exposes native code to the Blueprint layer.">B) The reflection system exposes marked C++ to the Blueprint layer</button>
+                            <button class="quiz-option" data-correct="false" data-hint="No transpilation happens.">C) Unreal transpiles Blueprints into C++ at build time</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> Which task is the <em>best</em> fit for Blueprint over C++?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="That's per-frame, per-agent work.">A) Crowd-simulation math for 500 agents each tick</button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — occasional, designer-tuned, benefits from fast iteration.">B) Tuning the feel of a level's timed events</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Third-party C++ can't be reached from Blueprint.">C) Linking a third-party C++ physics library</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> In the hybrid model, who typically owns a Blueprint subclass of a C++ base?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="The base holds the mechanics.">A) It replaces the C++ class entirely</button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — designers set content and tuning; the C++ base holds the mechanics.">B) Designers/artists, to set content and tuning over C++ mechanics</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Subclasses are the norm, not an anti-pattern.">C) No one — subclassing C++ in Blueprint is discouraged</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li>Blueprint sits <strong>on top of</strong> C++ — the reflection system bridges them, so they're layers of one engine, not competitors.</li>
+                        <li>Reach for <strong>C++</strong> for performance-critical code, engine features without nodes, shared foundations, and third-party integration.</li>
+                        <li>Reach for <strong>Blueprint</strong> for fast iteration, designer access, and visual event flow.</li>
+                        <li>The professional default is the <strong>hybrid model</strong>: C++ base classes with mechanics, extended and tuned by Blueprint subclasses.</li>
+                        <li>Decide feature-by-feature — "both, in layers" is a common and correct answer.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/programming-with-cplusplus-in-unreal-engine" target="_blank" rel="noopener">Programming with C++ in Unreal Engine (Epic)</a></li>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/blueprints-visual-scripting-in-unreal-engine" target="_blank" rel="noopener">Blueprint Visual Scripting (Epic)</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p>You know <em>why</em> C++ matters here. Next we'll tour the Unreal Editor specifically through a programmer's eyes — where your C++ classes show up, how the editor and code relate, and the panels you'll actually live in.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Lesson complete!</h3>
+                    <p>You've got the map. Time to learn the terrain.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="index.html" class="prev-lesson">← Course Home</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m01_l02_editor_orientation_for_programmers.html" class="next-lesson">Next: The Unreal Editor for Programmers →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

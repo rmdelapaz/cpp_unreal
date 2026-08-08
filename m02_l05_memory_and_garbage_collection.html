@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Unreal Engine 5.8 memory management: the UObject lifecycle, garbage collection, UPROPERTY reachability, TObjectPtr and TWeakObjectPtr, and smart pointers for non-UObjects.">
+    <meta name="author" content="Ray de la Paz">
+    <title>Memory &amp; Garbage Collection — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 2</a></li>
+            <li aria-current="page">Lesson 2.5: Memory &amp; Garbage Collection</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>🗑️ Lesson 2.5: Memory &amp; Garbage Collection</h1>
+                <p class="lead">In plain C++ you manage memory by hand. In Unreal, <code>UObject</code>s are garbage-collected — and that changes how you write everything. This lesson explains the rules so you never chase a dangling-pointer crash or a mysterious leak again.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Describe the UObject lifecycle and what triggers garbage collection</li>
+                        <li>Explain "reachability" and why <code>UPROPERTY</code> pointers keep objects alive</li>
+                        <li>Use <code>TObjectPtr</code> and <code>TWeakObjectPtr</code> appropriately</li>
+                        <li>Choose smart pointers (<code>TSharedPtr</code>, <code>TUniquePtr</code>, <code>TWeakPtr</code>) for non-UObject data</li>
+                        <li>Know when (rarely) to use raw <code>new</code>/<code>delete</code></li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 60 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#two-worlds" class="toc-link">Two Memory Worlds</a></li>
+                        <li><a href="#lifecycle" class="toc-link">The UObject Lifecycle</a></li>
+                        <li><a href="#reachability" class="toc-link">Reachability &amp; UPROPERTY</a></li>
+                        <li><a href="#objectptr" class="toc-link">TObjectPtr &amp; TWeakObjectPtr</a></li>
+                        <li><a href="#smartptr" class="toc-link">Smart Pointers for Non-UObjects</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="two-worlds" class="lesson-section">
+                <h2>Two Memory Worlds</h2>
+                <p>The single most important distinction: Unreal has <strong>two kinds of objects with two memory strategies.</strong></p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th></th><th>UObjects</th><th>Everything else</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>Examples</td><td>Actors, components, subsystems, any <code>UCLASS</code></td><td><code>FString</code>, structs, plain C++ classes, third-party types</td></tr>
+                            <tr><td>Created with</td><td><code>NewObject</code>, <code>SpawnActor</code>, <code>CreateDefaultSubobject</code></td><td><code>new</code>, stack, or smart pointers</td></tr>
+                            <tr><td>Freed by</td><td>The <strong>garbage collector</strong> automatically</td><td>You / smart pointers / scope</td></tr>
+                            <tr><td>Keep-alive via</td><td><code>UPROPERTY</code> pointers</td><td>Ownership (shared/unique ptr, scope)</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Never <code>delete</code> a UObject</h4>
+                    <p>You do not <code>delete</code> actors or components. To remove an actor you call <code>Destroy()</code>; the GC reclaims the memory later. Calling <code>delete</code> on a UObject corrupts the engine's object system. Manual <code>new</code>/<code>delete</code> is reserved for non-UObject data — and even there, smart pointers are usually better.</p>
+                </div>
+            </section>
+
+            <section id="lifecycle" class="lesson-section">
+                <h2>The UObject Lifecycle</h2>
+                <p>A UObject moves through well-defined phases. For actors specifically, you'll hook into several of these in Module 3:</p>
+
+                <div class="mermaid">
+                    graph TD
+                        A["Created<br/>NewObject / SpawnActor"] --> B["Initialized<br/>constructor runs"]
+                        B --> C["BeginPlay<br/>(actors, when play starts)"]
+                        C --> D["Alive &amp; ticking"]
+                        D --> E["Destroy() / EndPlay<br/>marked for destruction"]
+                        E --> F["Unreachable<br/>no UPROPERTY refers to it"]
+                        F --> G["Garbage collected<br/>memory reclaimed"]
+                </div>
+                <figure>
+                    <figcaption>Figure 1: The lifecycle. Note the gap between "marked for destruction" and "actually collected" — the GC runs periodically, not instantly.</figcaption>
+                </figure>
+
+                <div class="card card-accent">
+                    <h4>📖 GC runs on a schedule</h4>
+                    <p>Garbage collection isn't instant or continuous — it runs at intervals. So after you <code>Destroy()</code> an actor, its memory isn't freed that same frame; it's freed at the next collection once nothing references it. This is why you check pointers for validity rather than assuming an object is gone the instant you asked for its removal.</p>
+                </div>
+            </section>
+
+            <section id="reachability" class="lesson-section">
+                <h2>Reachability &amp; UPROPERTY</h2>
+                <p>The GC uses <strong>reachability</strong>: starting from a set of "root" objects, it follows every <code>UPROPERTY</code> pointer. Any UObject it can reach is kept; anything it <em>can't</em> reach is destroyed. This is the whole game.</p>
+
+                <div class="mermaid">
+                    graph LR
+                        Root["GC Roots"] --> GM["GameInstance"]
+                        GM --> World["World / Levels"]
+                        World --> Actor["AEnemy (reachable → kept)"]
+                        Actor -->|"UPROPERTY UAmmoData*"| Ammo["UAmmoData (reachable → kept)"]
+                        Orphan["UObject with only a raw pointer to it<br/>(unreachable → collected)"]
+                </div>
+                <figure>
+                    <figcaption>Figure 2: The GC walks <code>UPROPERTY</code> references from the roots. A UObject reachable only through a non-UPROPERTY pointer is invisible — and gets collected.</figcaption>
+                </figure>
+
+                <pre><code class="language-cpp">UCLASS()
+class MYPROJECT_API AEnemy : public AActor
+{
+    GENERATED_BODY()
+
+    // ✅ Reachable: the GC follows this and keeps the loadout alive.
+    UPROPERTY()
+    UWeaponData* Loadout;
+
+    // ⚠️ Invisible to GC: the pointed-to object can be destroyed while we
+    // still hold this address — a dangling pointer waiting to crash.
+    UWeaponData* CachedLoadout;
+};</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ The habit that prevents whole bug classes</h4>
+                    <p><strong>Any UObject pointer you store as a member gets a <code>UPROPERTY()</code>.</strong> You revisited this in Lesson 2.3 from the specifier angle; here's the mechanism behind it. If you truly want a non-owning reference that's <em>allowed</em> to become null when the object dies, use <code>TWeakObjectPtr</code> (next section) — never a raw pointer.</p>
+                </div>
+
+                <p>To validate a pointer before use, Unreal gives you <code>IsValid()</code>, which is safer than a bare null check because it also catches objects pending destruction:</p>
+
+                <pre><code class="language-cpp">if (IsValid(Target))
+{
+    Target->TakeDamage(10.0f);   // safe: not null AND not pending kill
+}</code></pre>
+            </section>
+
+            <section id="objectptr" class="lesson-section">
+                <h2>TObjectPtr &amp; TWeakObjectPtr</h2>
+                <p>Modern Unreal has two wrapper types for UObject references you should know:</p>
+
+                <h3><code>TObjectPtr&lt;T&gt;</code> — the modern strong reference</h3>
+                <p>In UE5, Epic recommends declaring UObject pointer members as <code>TObjectPtr&lt;T&gt;</code> instead of raw <code>T*</code>. It behaves like a pointer but gives the engine extra tooling (access tracking, lazy loading support). It's still a <code>UPROPERTY</code> and still keeps the object alive.</p>
+
+                <pre><code class="language-cpp">// Modern UE5 style for a strong-owned UObject member:
+UPROPERTY(VisibleAnywhere)
+TObjectPtr&lt;UStaticMeshComponent&gt; Mesh;
+
+// You use it just like a raw pointer:
+if (Mesh) { Mesh->SetVisibility(true); }</code></pre>
+
+                <h3><code>TWeakObjectPtr&lt;T&gt;</code> — a non-owning reference</h3>
+                <p>Use this when you want to <em>refer</em> to a UObject without keeping it alive, and you're fine with it becoming invalid when the object is destroyed. It never causes a dangling-pointer crash because you must check it before use.</p>
+
+                <pre><code class="language-cpp">// "I want to remember my last target, but not keep it alive."
+UPROPERTY()
+TWeakObjectPtr&lt;AActor&gt; LastTarget;
+
+// Access pattern — always resolve and check:
+if (AActor* Target = LastTarget.Get())
+{
+    // Target is valid right now.
+}</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 Strong vs weak — the intent</h4>
+                    <p>A <strong>strong</strong> reference (<code>UPROPERTY() T*</code> or <code>TObjectPtr</code>) says "I own/need this; keep it alive." A <strong>weak</strong> reference (<code>TWeakObjectPtr</code>) says "I'm just watching; let it die when others are done, and tell me it's gone." Choosing weak for observer-style references prevents accidental object lifetime bloat.</p>
+                </div>
+            </section>
+
+            <section id="smartptr" class="lesson-section">
+                <h2>Smart Pointers for Non-UObjects</h2>
+                <p>The GC only manages UObjects. For plain C++ classes and structs (not <code>UCLASS</code>), Unreal provides its own smart pointer family — the equivalent of the standard library's, but Unreal-flavored:</p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Type</th><th>Ownership</th><th>Analogy</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>TUniquePtr&lt;T&gt;</code></td><td>Single owner; frees on destruction</td><td><code>std::unique_ptr</code></td></tr>
+                            <tr><td><code>TSharedPtr&lt;T&gt;</code></td><td>Shared, reference-counted</td><td><code>std::shared_ptr</code></td></tr>
+                            <tr><td><code>TWeakPtr&lt;T&gt;</code></td><td>Non-owning view of a <code>TSharedPtr</code></td><td><code>std::weak_ptr</code></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <pre><code class="language-cpp">// A plain (non-UObject) helper class:
+class FDamageCalculator { /* ... */ };
+
+// Single owner — freed automatically when the owner is destroyed:
+TUniquePtr&lt;FDamageCalculator&gt; Calculator = MakeUnique&lt;FDamageCalculator&gt;();
+
+// Shared ownership when several systems need to hold it:
+TSharedPtr&lt;FDamageCalculator&gt; Shared = MakeShared&lt;FDamageCalculator&gt;();
+TWeakPtr&lt;FDamageCalculator&gt; Observer = Shared;   // watches without owning</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Don't cross the streams</h4>
+                    <p><strong>Never</strong> put a UObject in a <code>TSharedPtr</code>/<code>TUniquePtr</code>, and never manage a non-UObject with <code>UPROPERTY</code>. UObjects → GC (via <code>UPROPERTY</code>/<code>TObjectPtr</code>). Non-UObjects → smart pointers or scope. Mixing the two systems is a reliable way to crash.</p>
+                </div>
+
+                <div class="card card-success">
+                    <h4>✅ When is raw <code>new</code>/<code>delete</code> okay?</h4>
+                    <p>Rarely, and only for non-UObjects where you have a clear, contained ownership story — and even then a <code>TUniquePtr</code> is usually cleaner and exception-safe. If you catch yourself typing <code>new UObject</code>-derived, stop: use <code>NewObject</code> or <code>SpawnActor</code> instead.</p>
+                </div>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: Fix the memory bugs</h3>
+                    <p><strong>Objective:</strong> Spot and correct the memory mistakes in this snippet.</p>
+                    <pre><code class="language-cpp">UCLASS()
+class MYPROJECT_API ATurret : public AActor
+{
+    GENERATED_BODY()
+
+    UWeaponData* Weapon;                 // (a)
+    TSharedPtr&lt;UWeaponData&gt; SharedWeapon; // (b)
+    AActor* CurrentTarget;               // (c) we observe it; it may die
+
+    void Cleanup()
+    {
+        delete Weapon;                    // (d)
+    }
+};</code></pre>
+                    <details>
+                        <summary>✅ Fixes</summary>
+                        <ul>
+                            <li><strong>(a)</strong> Add <code>UPROPERTY()</code> (or use <code>TObjectPtr</code>) so the GC keeps it alive: <code>UPROPERTY() TObjectPtr&lt;UWeaponData&gt; Weapon;</code></li>
+                            <li><strong>(b)</strong> Wrong system — a UObject must not live in a <code>TSharedPtr</code>. Remove it; hold the UObject via <code>UPROPERTY</code>/<code>TObjectPtr</code>.</li>
+                            <li><strong>(c)</strong> For an observed reference that may die, use <code>TWeakObjectPtr&lt;AActor&gt;</code> (still a <code>UPROPERTY</code>), not a raw pointer.</li>
+                            <li><strong>(d)</strong> Never <code>delete</code> a UObject. If you own it and want it gone, clear the reference and let the GC collect it (or <code>Destroy()</code> an actor).</li>
+                        </ul>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> How does the GC decide a UObject should be kept?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — it's reachable from a root through UPROPERTY references.">A) It's reachable from a root via <code>UPROPERTY</code> references</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Any pointer isn't enough — it must be reflected.">B) Any C++ pointer anywhere points to it</button>
+                            <button class="quiz-option" data-correct="false" data-hint="GC isn't about recent access.">C) It was used within the last frame</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> You want to reference an actor without keeping it alive, tolerating it being destroyed. Use:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="That would keep it alive.">A) <code>UPROPERTY() TObjectPtr&lt;AActor&gt;</code></button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — TWeakObjectPtr is a non-owning reference that safely becomes invalid.">B) <code>TWeakObjectPtr&lt;AActor&gt;</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="Smart pointers are for non-UObjects.">C) <code>TSharedPtr&lt;AActor&gt;</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> How do you correctly manage a plain (non-UObject) C++ helper with single ownership?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="UPROPERTY is for UObjects.">A) <code>UPROPERTY()</code> on it</button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — TUniquePtr/MakeUnique gives clean single ownership for non-UObjects.">B) <code>TUniquePtr&lt;T&gt;</code> via <code>MakeUnique</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="SpawnActor is for actors.">C) <code>SpawnActor</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li>Unreal has two memory worlds: <strong>UObjects</strong> (garbage-collected) and <strong>everything else</strong> (you/smart pointers/scope). Never mix them.</li>
+                        <li>Never <code>delete</code> a UObject — call <code>Destroy()</code> on actors and let the GC reclaim memory on its schedule.</li>
+                        <li>The GC keeps objects <strong>reachable</strong> via <code>UPROPERTY</code> references from roots; store UObject members as <code>UPROPERTY() TObjectPtr&lt;T&gt;</code>.</li>
+                        <li>Use <strong><code>TWeakObjectPtr</code></strong> for non-owning references that may become invalid; guard access with <code>IsValid()</code> / <code>.Get()</code>.</li>
+                        <li>For non-UObjects, use <strong><code>TUniquePtr</code>/<code>TSharedPtr</code>/<code>TWeakPtr</code></strong>; raw <code>new</code>/<code>delete</code> is a last resort.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-object-handling-in-unreal-engine" target="_blank" rel="noopener">Unreal Object Handling &amp; Garbage Collection (Epic)</a></li>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/smart-pointers-in-unreal-engine" target="_blank" rel="noopener">Smart Pointers in Unreal Engine (Epic)</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p>The last foundation piece is the one you'll use every single day: <strong>logging, assertions, and debugging</strong> — how to see what your code is doing and catch mistakes early with <code>UE_LOG</code>, <code>check</code>, and <code>ensure</code>.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Lesson complete!</h3>
+                    <p>Memory holds no more mysteries. Let's learn to see inside a running game.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m02_l04_unreal_core_types.html" class="prev-lesson">← Previous: Unreal Core Types &amp; Containers</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m02_l06_logging_asserts_debugging.html" class="next-lesson">Next: Logging, Assertions &amp; Debugging →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

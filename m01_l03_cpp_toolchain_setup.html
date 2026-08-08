@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Install and configure the Unreal Engine 5.8 C++ toolchain: Visual Studio or Rider, engine components, project generation, and a working .gitignore.">
+    <meta name="author" content="Ray de la Paz">
+    <title>Setting Up the C++ Toolchain — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 1</a></li>
+            <li aria-current="page">Lesson 1.3: Setting Up the C++ Toolchain</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>🛠️ Lesson 1.3: Setting Up the C++ Toolchain</h1>
+                <p class="lead">A C++ Unreal project needs a compiler and an IDE wired to the engine. Get this right once and every later lesson "just builds." Get it wrong and you'll fight phantom errors for hours — so we'll be precise.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Install the correct compiler toolchain for your platform</li>
+                        <li>Select the Unreal Engine components required for C++ development</li>
+                        <li>Choose and configure an IDE — Visual Studio 2022 or JetBrains Rider</li>
+                        <li>Generate project files and confirm a clean first build</li>
+                        <li>Add a correct <code>.gitignore</code> so only source and content are tracked</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 60 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#pieces" class="toc-link">The Pieces You Need</a></li>
+                        <li><a href="#windows" class="toc-link">Windows: Visual Studio 2022</a></li>
+                        <li><a href="#mac-linux" class="toc-link">macOS &amp; Linux</a></li>
+                        <li><a href="#ide-choice" class="toc-link">Visual Studio vs Rider</a></li>
+                        <li><a href="#genproj" class="toc-link">Generating Project Files</a></li>
+                        <li><a href="#gitignore" class="toc-link">A Correct .gitignore</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="pieces" class="lesson-section">
+                <h2>The Pieces You Need</h2>
+                <p>C++ development in Unreal involves four cooperating pieces. When a build fails mysteriously, it's almost always one of these being missing or mismatched:</p>
+
+                <div class="mermaid">
+                    graph LR
+                        A["Compiler toolchain<br/>(MSVC / Clang / Xcode)"] --> D["Unreal Build Tool (UBT)"]
+                        B["Unreal Engine 5.8<br/>+ source/symbols"] --> D
+                        C["Your IDE<br/>(VS 2022 / Rider)"] --> D
+                        D --> E["Compiled module → editor loads it"]
+                </div>
+                <figure>
+                    <figcaption>Figure 1: Unreal Build Tool (UBT) orchestrates the compiler using your project's <code>.Build.cs</code> rules. The IDE is a front-end; UBT does the real work.</figcaption>
+                </figure>
+
+                <div class="card card-accent">
+                    <h4>📖 Key term: UBT</h4>
+                    <p><strong>Unreal Build Tool (UBT)</strong> is Unreal's own build orchestrator. It reads your <code>.Build.cs</code> and <code>.Target.cs</code> files, figures out dependencies, and drives the platform compiler. You rarely call it directly — the editor and IDE do — but knowing it exists explains why Unreal builds differ from plain C++ projects.</p>
+                </div>
+            </section>
+
+            <section id="windows" class="lesson-section">
+                <h2>Windows: Visual Studio 2022</h2>
+                <p>Windows is the most common Unreal C++ platform. The compiler comes <em>with</em> Visual Studio, so installing VS correctly covers both compiler and IDE.</p>
+
+                <h3>Install the right workloads</h3>
+                <p>In the Visual Studio Installer, select these workloads and components:</p>
+                <ul>
+                    <li><strong>Game development with C++</strong> (this workload includes the Unreal-oriented components)</li>
+                    <li><strong>Desktop development with C++</strong></li>
+                    <li>Under individual components: <strong>MSVC v143 build tools</strong>, the <strong>Windows 10/11 SDK</strong>, and <strong>C++ profiling tools</strong></li>
+                    <li><strong>Unreal Engine installer</strong> component (adds UE integration and IntelliSense support)</li>
+                </ul>
+
+                <div class="card card-success">
+                    <h4>✅ Pro Tip</h4>
+                    <p>Epic publishes an official "Setting Up Visual Studio for Unreal Engine" guide that lists the exact components per engine version. When in doubt, follow that page — component names shift slightly between VS updates.</p>
+                </div>
+
+                <h3>Engine components</h3>
+                <p>In the Epic Games Launcher, next to Unreal Engine 5.8, use <strong>Options</strong> to ensure these are installed:</p>
+                <ul>
+                    <li><strong>Engine Source</strong> — lets you step into engine code while debugging (invaluable)</li>
+                    <li><strong>Editor symbols for debugging</strong> — readable call stacks when things crash</li>
+                </ul>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Watch Out</h4>
+                    <p>Editor symbols are large (many GB) but worth it. Without them, a crash gives you a stack of hex addresses instead of function names. Install them before your first real debugging session.</p>
+                </div>
+            </section>
+
+            <section id="mac-linux" class="lesson-section">
+                <h2>macOS &amp; Linux</h2>
+                <p>The concepts are identical; only the compiler differs.</p>
+                <ul>
+                    <li><strong>macOS:</strong> install <strong>Xcode</strong> from the App Store (provides the Clang toolchain and a debugger). JetBrains Rider is the most popular IDE for day-to-day Unreal C++ on Mac; Xcode itself can build and debug.</li>
+                    <li><strong>Linux:</strong> Unreal ships a bundled Clang toolchain. Rider and Visual Studio Code are the common editors. You typically build the engine from source or use Epic's Linux binaries.</li>
+                </ul>
+
+                <blockquote>
+                    <strong>💡 Cross-platform note:</strong> This course's code is platform-neutral Unreal C++ — the same <code>.h</code>/<code>.cpp</code> compiles everywhere. Only the <em>setup</em> in this lesson is platform-specific; everything after is not.
+                </blockquote>
+            </section>
+
+            <section id="ide-choice" class="lesson-section">
+                <h2>Visual Studio vs Rider</h2>
+                <p>Both are excellent. Here's an honest comparison so you can choose deliberately:</p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Aspect</th><th>Visual Studio 2022</th><th>JetBrains Rider</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>Cost</td><td>Free (Community edition)</td><td>Paid (free for some cases)</td></tr>
+                            <tr><td>Unreal awareness</td><td>Good, esp. with UnrealVS &amp; the UE component</td><td>Excellent — built-in Unreal support, understands reflection macros</td></tr>
+                            <tr><td>IntelliSense / code insight</td><td>Solid; can be slow on huge projects</td><td>Fast, accurate; strong refactoring</td></tr>
+                            <tr><td>Blueprint awareness</td><td>Limited</td><td>Can show Blueprint usages of C++</td></tr>
+                            <tr><td>Platform</td><td>Windows</td><td>Windows, macOS, Linux</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card card-success">
+                    <h4>✅ Recommendation</h4>
+                    <p>If you're on Windows and just starting, <strong>Visual Studio 2022 Community</strong> is free and fully capable — use it. If you already own a JetBrains license or want the best Unreal-specific tooling, <strong>Rider</strong> is a joy. Either works for this entire course.</p>
+                </div>
+            </section>
+
+            <section id="genproj" class="lesson-section">
+                <h2>Generating Project Files</h2>
+                <p>Here's a subtlety that confuses newcomers: the <code>.sln</code> / IDE project files are <strong>generated</strong>, not authored. They're derived from your <code>.uproject</code> and <code>Source/</code> tree. If you add a class outside the editor, or pull new code, you regenerate them.</p>
+
+                <p>To generate or regenerate them, right-click the <code>.uproject</code> file:</p>
+
+                <pre><code class="language-text">Right-click MyProject.uproject  →  "Generate Visual Studio project files"</code></pre>
+
+                <p>Or from the command line (useful in scripts / CI):</p>
+
+                <pre><code class="language-bash"># Windows — invoke UnrealBuildTool via the engine's batch file
+"C:\Program Files\Epic Games\UE_5.8\Engine\Build\BatchFiles\Build.bat" ^
+    -projectfiles -project="C:\Path\To\MyProject.uproject" -game -engine</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ The #1 newcomer fix</h4>
+                    <p>If your IDE shows red squiggles everywhere, classes "don't exist," or a build behaves oddly after you added files: <strong>regenerate project files</strong>, then rebuild. It resolves a large fraction of "it was working yesterday" problems. Deleting <code>Intermediate/</code> and <code>Binaries/</code> first makes it a clean regeneration.</p>
+                </div>
+
+                <p>The very first build after project creation may take several minutes — Unreal compiles your module and links against the engine. Subsequent incremental builds (and Live Coding, in the next lesson) are far faster.</p>
+            </section>
+
+            <section id="gitignore" class="lesson-section">
+                <h2>A Correct .gitignore</h2>
+                <p>From Lesson 1.2 you know which folders are generated. Put that knowledge into a <code>.gitignore</code> at your project root so your repository stays lean and conflict-free:</p>
+
+                <pre><code class="language-text"># Unreal generated folders — never commit
+Binaries/
+Build/
+DerivedDataCache/
+Intermediate/
+Saved/
+
+# IDE / project files (generated from .uproject)
+.vs/
+.idea/
+*.sln
+*.suo
+*.xcodeproj
+*.xcworkspace
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Keep: Source/, Content/, Config/, Plugins/, and the .uproject itself</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 What you DO commit</h4>
+                    <p><code>Source/</code> (your code), <code>Content/</code> (your assets), <code>Config/</code> (your settings), <code>Plugins/</code> (project plugins), and the <code>.uproject</code>. Everything a teammate needs to regenerate and build — nothing that a build produces.</p>
+                </div>
+
+                <div class="card card-success">
+                    <h4>✅ Pro Tip</h4>
+                    <p>Because <code>Content/</code> holds large binary <code>.uasset</code> files, many teams add <strong>Git LFS</strong> for those. It's optional for solo learning but standard on real projects. We'll note it again when it matters.</p>
+                </div>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: Verify your toolchain</h3>
+                    <p><strong>Objective:</strong> Confirm the setup end to end before writing real code.</p>
+                    <ol>
+                        <li>Create a new project from a <strong>C++</strong> template (e.g. "Third Person", with C++ selected — not Blueprint).</li>
+                        <li>Let the initial build complete and the editor open.</li>
+                        <li>Close the editor, delete <code>Intermediate/</code> and <code>Binaries/</code>, regenerate project files, and rebuild from the IDE. It should succeed.</li>
+                        <li>Add the <code>.gitignore</code> above, run <code>git init</code>, and confirm <code>git status</code> lists <code>Source/</code>, <code>Content/</code>, <code>Config/</code>, and the <code>.uproject</code> — but <em>not</em> <code>Binaries/</code> or <code>Intermediate/</code>.</li>
+                    </ol>
+
+                    <details>
+                        <summary>💡 Hint</summary>
+                        <p>If step 3 fails to build, the usual culprits are a missing Windows SDK, the wrong MSVC version, or not having regenerated project files after deleting <code>Intermediate/</code>. Re-check the workloads in the Windows section.</p>
+                    </details>
+
+                    <details>
+                        <summary>✅ Success looks like</summary>
+                        <p>A clean rebuild from a deleted <code>Intermediate/</code>, the editor reopening, and a <code>git status</code> that shows only source/content/config/uproject as untracked. If all three hold, your toolchain is solid for the rest of the course.</p>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> What actually drives the compiler in an Unreal build?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="The IDE is a front-end.">A) Visual Studio, directly</button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — UBT reads .Build.cs/.Target.cs and orchestrates the platform compiler.">B) Unreal Build Tool (UBT)</button>
+                            <button class="quiz-option" data-correct="false" data-hint="That's a general build system, not Unreal's.">C) CMake</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> Your IDE suddenly shows errors for classes that clearly exist. Best first fix?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — regenerating project files resolves most 'phantom' IDE errors after adding/pulling files.">A) Regenerate project files, then rebuild</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Rarely the cause; try regeneration first.">B) Reinstall the engine</button>
+                            <button class="quiz-option" data-correct="false" data-hint="You'd lose your work and it wouldn't help.">C) Delete Source/ and start over</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> Which folder <em>should</em> be committed to source control?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="Generated build output.">A) Intermediate/</button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — Source/ holds your code and is committed.">B) Source/</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Generated logs and caches.">C) Saved/</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li>C++ Unreal development needs four cooperating pieces: <strong>compiler, engine (with source + symbols), IDE, and UBT</strong>.</li>
+                        <li>On Windows, install <strong>Visual Studio 2022</strong> with the <em>Game development with C++</em> workload; on macOS use <strong>Xcode</strong>; on Linux use the bundled Clang.</li>
+                        <li><strong>Visual Studio 2022 Community</strong> (free) or <strong>Rider</strong> (paid, excellent Unreal support) both work for the whole course.</li>
+                        <li>IDE/solution files are <strong>generated</strong> — regenerating them is the fix for most phantom errors.</li>
+                        <li>Commit <code>Source/</code>, <code>Content/</code>, <code>Config/</code>, <code>Plugins/</code>, and the <code>.uproject</code>; ignore all generated folders.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/setting-up-visual-studio-development-environment-for-cplusplus-projects-in-unreal-engine" target="_blank" rel="noopener">Setting Up Visual Studio for Unreal Engine (Epic)</a></li>
+                    <li><a href="https://www.jetbrains.com/help/rider/Unreal_Engine.html" target="_blank" rel="noopener">Rider for Unreal Engine (JetBrains)</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p>Toolchain ready. Before we create a class, a focused refresher on the specific C++ language features Unreal leans on hardest — references, pointers, const, and a little template magic — so nothing in later code feels like a surprise.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Lesson complete!</h3>
+                    <p>Your machine can build Unreal C++. Let's sharpen the language.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m01_l02_editor_orientation_for_programmers.html" class="prev-lesson">← Previous: The Unreal Editor for Programmers</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m01_l04_cpp_refresher_for_unreal.html" class="next-lesson">Next: A C++ Refresher, Unreal-Flavored →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

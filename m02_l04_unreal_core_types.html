@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Unreal Engine 5.8's core types: FString vs FName vs FText, the TArray/TMap/TSet containers, and why you use them instead of the C++ standard library.">
+    <meta name="author" content="Ray de la Paz">
+    <title>Unreal Core Types &amp; Containers — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 2</a></li>
+            <li aria-current="page">Lesson 2.4: Unreal Core Types &amp; Containers</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>🧰 Lesson 2.4: Unreal Core Types — FString, FName, FText &amp; Containers</h1>
+                <p class="lead">Unreal has its own strings and containers, and it expects you to use them. They aren't reinventions for their own sake — each solves a real engine need (reflection, performance, localization) that the C++ standard library doesn't address.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Choose correctly between <code>FString</code>, <code>FName</code>, and <code>FText</code></li>
+                        <li>Use <code>TArray</code>, <code>TMap</code>, and <code>TSet</code> for common gameplay data</li>
+                        <li>Explain why Unreal containers are preferred over <code>std::vector</code>/<code>std::map</code> here</li>
+                        <li>Wrap string literals in <code>TEXT()</code> and understand why</li>
+                        <li>Convert between the string types when you must</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 60 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#strings" class="toc-link">Three Strings, Three Jobs</a></li>
+                        <li><a href="#text-macro" class="toc-link">The TEXT() Macro</a></li>
+                        <li><a href="#tarray" class="toc-link">TArray</a></li>
+                        <li><a href="#tmap-tset" class="toc-link">TMap &amp; TSet</a></li>
+                        <li><a href="#why-not-std" class="toc-link">Why Not std::?</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="strings" class="lesson-section">
+                <h2>Three Strings, Three Jobs</h2>
+                <p>Newcomers are surprised Unreal has <em>three</em> string types. The reason is that "a string" plays three different roles in a game, with different priorities:</p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Type</th><th>Use it for</th><th>Key property</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>FString</code></td><td>Mutable text you build, manipulate, log</td><td>Flexible but heaviest; not for identifiers</td></tr>
+                            <tr><td><code>FName</code></td><td>Identifiers: asset names, bone names, tags, keys</td><td>Immutable, case-insensitive, hashed — comparison is nearly free</td></tr>
+                            <tr><td><code>FText</code></td><td>Anything shown to a player</td><td>Localizable — supports translation &amp; culture formatting</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <pre><code class="language-cpp">// FString — you're assembling/altering text (e.g. a debug string):
+FString DebugLine = FString::Printf(TEXT("Health: %d / %d"), Current, Max);
+
+// FName — a lightweight identifier used as a key or lookup:
+FName SocketName = TEXT("hand_r");
+if (Mesh->DoesSocketExist(SocketName)) { /* ... */ }
+
+// FText — player-facing, so it can be localized:
+UPROPERTY(EditAnywhere, Category = "UI")
+FText ButtonLabel = FText::FromString(TEXT("Start Game"));</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ The one-line decision</h4>
+                    <p><strong>Shown to a player? <code>FText</code>. Used as an identifier/key? <code>FName</code>. Everything else (building, parsing, logging)? <code>FString</code>.</strong> Using <code>FName</code> for keys instead of <code>FString</code> is a real performance win — <code>FName</code> comparison is an integer compare, not a character-by-character one.</p>
+                </div>
+            </section>
+
+            <section id="text-macro" class="lesson-section">
+                <h2>The TEXT() Macro</h2>
+                <p>You've seen <code>TEXT("...")</code> around every string literal. It's not optional decoration — it forces the literal to be wide (UTF-16) characters, which is what Unreal's string types expect. Omit it and you get needless conversions or subtle bugs.</p>
+
+                <pre><code class="language-cpp">FString Good = TEXT("Ready");     // wide literal — correct, no conversion
+FString Risky = "Ready";          // narrow literal — forces a runtime conversion
+
+UE_LOG(LogTemp, Warning, TEXT("Always wrap log format strings in TEXT()"));</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Make it a reflex</h4>
+                    <p>Wrap <em>every</em> string literal that feeds an Unreal API in <code>TEXT()</code>. It's the norm across the entire engine codebase, and forgetting it is a classic newcomer smell that reviewers will flag immediately.</p>
+                </div>
+            </section>
+
+            <section id="tarray" class="lesson-section">
+                <h2>TArray — the workhorse container</h2>
+                <p><code>TArray&lt;T&gt;</code> is Unreal's dynamic array — the container you'll reach for most. It's the equivalent of <code>std::vector</code>, but reflection-aware and integrated with the engine.</p>
+
+                <pre><code class="language-cpp">TArray&lt;AActor*&gt; NearbyEnemies;
+
+NearbyEnemies.Add(SomeEnemy);                 // append
+NearbyEnemies.Num();                          // count (not .size())
+NearbyEnemies.Contains(SomeEnemy);            // membership test
+NearbyEnemies.Remove(SomeEnemy);              // remove by value
+NearbyEnemies[0];                             // indexed access
+
+// Range-based for — the idiomatic way to iterate:
+for (AActor* Enemy : NearbyEnemies)
+{
+    if (Enemy) { /* always null-check UObject pointers */ }
+}
+
+// Reflected TArray shows up as an editable list in the Details panel:
+UPROPERTY(EditAnywhere, Category = "Spawning")
+TArray&lt;TSubclassOf&lt;AActor&gt;&gt; SpawnableTypes;</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 Unreal names, not STL names</h4>
+                    <p>Note the API: <code>.Num()</code> not <code>.size()</code>, <code>.Add()</code> not <code>.push_back()</code>, <code>.Contains()</code> not <code>std::find</code>. Same concepts, Unreal spelling. When a <code>TArray</code> is a <code>UPROPERTY</code>, the editor renders it as an add/remove list for free.</p>
+                </div>
+            </section>
+
+            <section id="tmap-tset" class="lesson-section">
+                <h2>TMap &amp; TSet</h2>
+                <p><code>TMap&lt;Key, Value&gt;</code> stores key→value pairs; <code>TSet&lt;T&gt;</code> stores unique values. Both are hashed for fast lookup.</p>
+
+                <pre><code class="language-cpp">// TMap: an inventory of item name -> quantity
+TMap&lt;FName, int32&gt; Inventory;
+
+Inventory.Add(TEXT("Potion"), 3);
+Inventory.Add(TEXT("Key"), 1);
+
+if (int32* Count = Inventory.Find(TEXT("Potion")))
+{
+    // Find returns a pointer to the value, or nullptr if the key is absent.
+    (*Count)++;   // now 4
+}
+
+for (const TPair&lt;FName, int32&gt;&amp; Entry : Inventory)
+{
+    UE_LOG(LogTemp, Log, TEXT("%s x%d"), *Entry.Key.ToString(), Entry.Value);
+}
+
+// TSet: a collection of unique tags, no duplicates
+TSet&lt;FName&gt; ActiveTags;
+ActiveTags.Add(TEXT("OnFire"));
+ActiveTags.Add(TEXT("OnFire"));   // ignored — already present
+bool bBurning = ActiveTags.Contains(TEXT("OnFire"));</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ TMap::Find returns a pointer</h4>
+                    <p><code>Inventory.Find(Key)</code> gives you a <em>pointer</em> to the value (or <code>nullptr</code>) — not the value itself. Always check it before dereferencing. This trips people up coming from other languages where map lookup returns a value or throws.</p>
+                </div>
+
+                <div class="card card-success">
+                    <h4>✅ Pro Tip</h4>
+                    <p><code>FName</code> keys pair beautifully with <code>TMap</code>/<code>TSet</code> because their hashing and comparison are cheap. An <code>Inventory</code> keyed by <code>FName</code> is idiomatic Unreal.</p>
+                </div>
+            </section>
+
+            <section id="why-not-std" class="lesson-section">
+                <h2>Why Not std::?</h2>
+                <p>You <em>can</em> use <code>std::vector</code> in a <code>.cpp</code>, but Unreal's containers are strongly preferred in gameplay code. The reasons are concrete:</p>
+
+                <div class="mermaid">
+                    graph TD
+                        A["Unreal containers (TArray, TMap, TSet)"] --> R["Reflection-aware:<br/>can be UPROPERTY, shown in editor"]
+                        A --> S["Serialization:<br/>save/load &amp; replicate"]
+                        A --> M["Engine memory allocators &amp; profiling"]
+                        A --> D["First-class debugger &amp; log support"]
+                        B["std:: containers"] --> N["None of the above out of the box"]
+                </div>
+                <figure>
+                    <figcaption>Figure 1: Unreal containers plug into reflection, serialization, and the engine's memory system. A <code>std::vector</code> can't be a <code>UPROPERTY</code>.</figcaption>
+                </figure>
+
+                <blockquote>
+                    <strong>💡 The practical line:</strong> if the data is a member of a reflected class, needs to appear in the editor, be saved, or be replicated, it <em>must</em> be an Unreal container. For a purely local, throwaway computation inside one function, either works — but staying consistent with Unreal's types keeps the codebase uniform.
+                </blockquote>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: Pick the type</h3>
+                    <p><strong>Objective:</strong> Match each piece of data to the right Unreal type.</p>
+                    <ol>
+                        <li>The label on a quest button, shown to players in multiple languages</li>
+                        <li>The key identifying which weapon socket to attach to</li>
+                        <li>A list of all pickups currently overlapping the player</li>
+                        <li>A mapping from ability name to its cooldown remaining</li>
+                        <li>A debug message you assemble from several numbers</li>
+                    </ol>
+
+                    <details>
+                        <summary>✅ Answers</summary>
+                        <ul>
+                            <li><strong>1.</strong> <code>FText</code> — player-facing, localizable.</li>
+                            <li><strong>2.</strong> <code>FName</code> — an identifier/key, compared cheaply.</li>
+                            <li><strong>3.</strong> <code>TArray&lt;AActor*&gt;</code> (or of your pickup type) — an ordered, growable list.</li>
+                            <li><strong>4.</strong> <code>TMap&lt;FName, float&gt;</code> — key→value lookup.</li>
+                            <li><strong>5.</strong> <code>FString</code> via <code>FString::Printf(TEXT("..."), ...)</code> — mutable, built text.</li>
+                        </ul>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> Which type should hold text displayed to the player?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="That's for building/manipulating strings.">A) <code>FString</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="That's for identifiers/keys.">B) <code>FName</code></button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — FText is localizable and made for player-facing text.">C) <code>FText</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> What does <code>TMap::Find(Key)</code> return when the key is missing?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — Find returns nullptr when the key isn't present; always null-check it.">A) <code>nullptr</code> (it returns a pointer to the value)</button>
+                            <button class="quiz-option" data-correct="false" data-hint="It doesn't throw.">B) It throws an exception</button>
+                            <button class="quiz-option" data-correct="false" data-hint="It doesn't insert a default.">C) A default-constructed value inserted into the map</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> Why can't a <code>std::vector</code> member be a <code>UPROPERTY</code>?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — only reflection-aware Unreal containers integrate with UPROPERTY/editor/serialization.">A) It isn't reflection-aware; only Unreal containers integrate with UPROPERTY</button>
+                            <button class="quiz-option" data-correct="false" data-hint="It compiles fine in a .cpp; the issue is reflection.">B) It doesn't compile in Unreal at all</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Size isn't the reason.">C) It's always too large</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li>Three strings, three jobs: <strong><code>FText</code></strong> for player-facing/localizable text, <strong><code>FName</code></strong> for cheap identifiers/keys, <strong><code>FString</code></strong> for mutable/built text.</li>
+                        <li>Wrap every string literal feeding an Unreal API in <strong><code>TEXT()</code></strong>.</li>
+                        <li><code>TArray</code> (list), <code>TMap</code> (key→value), and <code>TSet</code> (unique values) are the core containers — note Unreal's API names (<code>.Num()</code>, <code>.Add()</code>, <code>.Contains()</code>).</li>
+                        <li><code>TMap::Find</code> returns a <strong>pointer</strong> (nullptr if absent) — always check it.</li>
+                        <li>Prefer Unreal containers in gameplay code: only they can be <code>UPROPERTY</code>s and plug into the editor, serialization, and networking.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/string-handling-in-unreal-engine" target="_blank" rel="noopener">String Handling: FString, FName, FText (Epic)</a></li>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/array-containers-in-unreal-engine" target="_blank" rel="noopener">Container Types: TArray, TMap, TSet (Epic)</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p>We keep hinting at garbage collection and "keeping objects alive." Time to face it directly: the <strong>memory model</strong> — the UObject lifecycle, how the GC decides what lives, <code>TObjectPtr</code>, and the smart pointers you use for non-UObjects.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Lesson complete!</h3>
+                    <p>You've got Unreal's vocabulary. Now, its memory.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m02_l03_uproperty_ufunction_specifiers.html" class="prev-lesson">← Previous: UPROPERTY &amp; UFUNCTION Specifiers</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m02_l05_memory_and_garbage_collection.html" class="next-lesson">Next: Memory &amp; Garbage Collection →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

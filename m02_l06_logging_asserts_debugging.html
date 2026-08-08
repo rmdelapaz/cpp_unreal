@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Debugging Unreal Engine 5.8 C++: UE_LOG and custom log categories, on-screen debug messages, check/ensure/verify assertions, and debug drawing.">
+    <meta name="author" content="Ray de la Paz">
+    <title>Logging, Assertions &amp; Debugging — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 2</a></li>
+            <li aria-current="page">Lesson 2.6: Logging, Assertions &amp; Debugging</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>🔍 Lesson 2.6: Logging, Assertions &amp; Debugging C++</h1>
+                <p class="lead">You can't fix what you can't see. This lesson gives you the everyday toolkit for observing and hardening C++: structured logging, on-screen messages, assertions that catch bugs at their source, and debug drawing to make invisible logic visible.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Use <code>UE_LOG</code> with the right verbosity and format specifiers</li>
+                        <li>Declare and use a custom log category for your game</li>
+                        <li>Print on-screen debug messages during play</li>
+                        <li>Choose between <code>check</code>, <code>ensure</code>, and <code>verify</code></li>
+                        <li>Visualize logic with debug drawing (lines, spheres, points)</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 45 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#uelog" class="toc-link">UE_LOG &amp; Verbosity</a></li>
+                        <li><a href="#categories" class="toc-link">Custom Log Categories</a></li>
+                        <li><a href="#onscreen" class="toc-link">On-Screen Messages</a></li>
+                        <li><a href="#asserts" class="toc-link">check, ensure, verify</a></li>
+                        <li><a href="#drawing" class="toc-link">Debug Drawing</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="uelog" class="lesson-section">
+                <h2>UE_LOG &amp; Verbosity</h2>
+                <p><code>UE_LOG</code> is Unreal's <code>printf</code>. It writes to the Output Log and the log file, tagged with a <em>category</em> and a <em>verbosity</em>.</p>
+
+                <pre><code class="language-cpp">// UE_LOG(Category, Verbosity, Format, Args...)
+UE_LOG(LogTemp, Warning, TEXT("Player %s took %.1f damage"), *GetName(), Damage);</code></pre>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Verbosity</th><th>Use for</th><th>Note</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>Fatal</code></td><td>Unrecoverable — crashes the game intentionally</td><td>Always compiled in</td></tr>
+                            <tr><td><code>Error</code></td><td>Something is wrong and visible</td><td>Red in the log</td></tr>
+                            <tr><td><code>Warning</code></td><td>Suspicious but non-fatal</td><td>Yellow — easy to spot</td></tr>
+                            <tr><td><code>Display</code></td><td>Important normal info</td><td>Shown by default</td></tr>
+                            <tr><td><code>Log</code></td><td>General developer logging</td><td>The everyday level</td></tr>
+                            <tr><td><code>Verbose</code> / <code>VeryVerbose</code></td><td>Deep detail</td><td>Off unless enabled</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card card-accent">
+                    <h4>📖 Format specifiers you'll use constantly</h4>
+                    <ul>
+                        <li><code>%d</code> — integer (<code>int32</code>) · <code>%f</code> / <code>%.1f</code> — float · <code>%s</code> — a string</li>
+                        <li><strong>For <code>%s</code>, dereference an <code>FString</code> with <code>*</code></strong>: <code>*MyString</code> or <code>*GetName()</code>. Forgetting the <code>*</code> is the most common logging mistake.</li>
+                        <li><code>%d</code> for <code>bool</code> prints 0/1; or use <code>%s</code> with a ternary for readability.</li>
+                    </ul>
+                </div>
+
+                <div class="card card-warning">
+                    <h4>⚠️ <code>Fatal</code> really crashes</h4>
+                    <p><code>UE_LOG(..., Fatal, ...)</code> deliberately terminates the game with the message. Use it only for truly unrecoverable states. For "this shouldn't happen but let's keep going," you want <code>ensure</code> (below), not <code>Fatal</code>.</p>
+                </div>
+            </section>
+
+            <section id="categories" class="lesson-section">
+                <h2>Custom Log Categories</h2>
+                <p><code>LogTemp</code> is fine for quick tests, but real projects define their own categories so you can filter your game's logs away from the engine's firehose.</p>
+
+                <p>Declare the category in a header (often a shared one) and define it once in a <code>.cpp</code>:</p>
+
+                <pre><code class="language-cpp">// MyGameLog.h — declare the category
+#pragma once
+#include "CoreMinimal.h"
+
+// Args: category name, default verbosity, compiled-in max verbosity
+DECLARE_LOG_CATEGORY_EXTERN(LogMyGame, Log, All);</code></pre>
+
+                <pre><code class="language-cpp">// MyGameLog.cpp — define it exactly once
+#include "MyGameLog.h"
+
+DEFINE_LOG_CATEGORY(LogMyGame);</code></pre>
+
+                <pre><code class="language-cpp">// Anywhere that includes MyGameLog.h:
+UE_LOG(LogMyGame, Log, TEXT("Wave %d started with %d enemies"), WaveNumber, Count);</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ Pro Tip</h4>
+                    <p>Type your category name (<code>LogMyGame</code>) into the Output Log's filter box to see only your messages. You can also set per-category verbosity at runtime with the console: <code>Log LogMyGame Verbose</code>. Custom categories turn the log from noise into a signal.</p>
+                </div>
+            </section>
+
+            <section id="onscreen" class="lesson-section">
+                <h2>On-Screen Messages</h2>
+                <p>Sometimes you want feedback right in the viewport without hunting the log. <code>GEngine-&gt;AddOnScreenDebugMessage</code> prints to the screen during play.</p>
+
+                <pre><code class="language-cpp">if (GEngine)
+{
+    // Args: key (-1 = always add new), time on screen (s), color, message
+    GEngine->AddOnScreenDebugMessage(
+        -1, 5.0f, FColor::Green,
+        FString::Printf(TEXT("Ammo: %d"), CurrentAmmo));
+}</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Always guard <code>GEngine</code></h4>
+                    <p><code>GEngine</code> can be null in some contexts, so wrap the call in <code>if (GEngine)</code>. Using a non-negative <em>key</em> instead of <code>-1</code> updates the same line each frame rather than stacking new messages — handy for per-frame values.</p>
+                </div>
+            </section>
+
+            <section id="asserts" class="lesson-section">
+                <h2>check, ensure, verify</h2>
+                <p>Assertions catch "this must be true" conditions at the exact point they break, instead of letting a bad value propagate into a confusing crash later. Unreal has three families with different behavior:</p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Macro</th><th>If condition is false…</th><th>In shipping builds</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>check(x)</code></td><td>Halts execution (crash) immediately</td><td>Compiled out (no cost)</td></tr>
+                            <tr><td><code>ensure(x)</code></td><td>Logs + breaks in debugger, then <em>continues</em></td><td>Still reports once</td></tr>
+                            <tr><td><code>verify(x)</code></td><td>Like <code>check</code>, but the expression still runs in shipping</td><td>Expression runs; check removed</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <pre><code class="language-cpp">// check: an invariant that must hold — if not, we WANT to stop now.
+check(MaxHealth &gt; 0);   // a zero/negative max health is a design bug
+
+// ensure: "shouldn't happen, but let's survive and get told about it."
+if (ensure(Weapon != nullptr))
+{
+    Weapon->Fire();     // only runs if the ensure passed
+}
+
+// checkf / ensureMsgf: same, with a formatted message
+checkf(Ammo &gt;= 0, TEXT("Ammo went negative: %d"), Ammo);</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 Which one when?</h4>
+                    <ul>
+                        <li><strong><code>check</code></strong> — a condition whose violation means the code is fundamentally broken and continuing is meaningless. Development-only.</li>
+                        <li><strong><code>ensure</code></strong> — a condition you expect to hold but want to <em>recover</em> from; it reports once and continues, so a designer's bad data doesn't hard-crash the editor.</li>
+                        <li><strong><code>verify</code></strong> — when the checked expression has a side effect you need even in shipping (e.g. it performs an operation and returns success).</li>
+                    </ul>
+                </div>
+
+                <div class="card card-success">
+                    <h4>✅ Pro Tip</h4>
+                    <p>Favor <code>ensure</code> in gameplay code and the editor — it surfaces the bug in the log and debugger without taking down the whole session, which keeps you productive. Reserve <code>check</code> for genuine invariants where continuing would be nonsense.</p>
+                </div>
+            </section>
+
+            <section id="drawing" class="lesson-section">
+                <h2>Debug Drawing</h2>
+                <p>Much game logic is spatial — a trace, a radius, a direction. Debug drawing renders temporary shapes in the world so you can <em>see</em> what your math is doing. Include <code>DrawDebugHelpers.h</code>.</p>
+
+                <pre><code class="language-cpp">#include "DrawDebugHelpers.h"
+
+// A line from the actor forward 500 units, red, lasting 2 seconds:
+const FVector Start = GetActorLocation();
+const FVector End   = Start + GetActorForwardVector() * 500.0f;
+DrawDebugLine(GetWorld(), Start, End, FColor::Red, false, 2.0f);
+
+// A sphere showing an interaction radius:
+DrawDebugSphere(GetWorld(), Start, 200.0f, 16, FColor::Green, false, 2.0f);
+
+// A labeled point:
+DrawDebugPoint(GetWorld(), End, 12.0f, FColor::Blue, false, 2.0f);</code></pre>
+
+                <blockquote>
+                    <strong>💡 You'll rely on this in Module 5.</strong> When we do traces and overlaps, debug drawing is how you confirm the trace actually goes where you think. It turns "why isn't this hitting?" into an obvious picture. These draws are development aids — strip or guard them out of shipping builds.
+                </blockquote>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: Instrument a function</h3>
+                    <p><strong>Objective:</strong> Add the right diagnostics to a damage function.</p>
+                    <p>Given <code>void ApplyDamage(float Amount, AActor* Target)</code>, add: (1) an <code>ensure</code> that <code>Target</code> is valid before use, (2) a <code>check</code> that <code>Amount</code> is non-negative, (3) a log line under a custom category recording who took how much, and (4) a debug sphere at the target's location.</p>
+
+                    <details>
+                        <summary>✅ Sample solution</summary>
+                        <pre><code class="language-cpp">void AWeapon::ApplyDamage(float Amount, AActor* Target)
+{
+    check(Amount &gt;= 0.0f);
+    if (!ensure(IsValid(Target))) { return; }
+
+    UE_LOG(LogMyGame, Log, TEXT("%s took %.1f damage"),
+        *Target->GetName(), Amount);
+
+    DrawDebugSphere(GetWorld(), Target->GetActorLocation(),
+        50.0f, 12, FColor::Red, false, 1.0f);
+
+    // ... apply the damage ...
+}</code></pre>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> To print an <code>FString</code> with <code>%s</code> in <code>UE_LOG</code>, you must:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — dereference the FString with * so %s receives the character data.">A) Dereference it with <code>*</code>, e.g. <code>*MyString</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="No &amp; needed.">B) Prefix it with <code>&amp;</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="It won't format correctly raw.">C) Pass it directly with no operator</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> You want to catch a "shouldn't happen" case but keep the editor running. Use:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="That halts execution.">A) <code>check</code></button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — ensure reports once and continues, ideal for recoverable issues.">B) <code>ensure</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="That intentionally crashes.">C) <code>UE_LOG(..., Fatal, ...)</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> Why define a custom log category like <code>LogMyGame</code>?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — custom categories let you filter and set verbosity for your own messages.">A) To filter your messages from engine noise and control their verbosity</button>
+                            <button class="quiz-option" data-correct="false" data-hint="It doesn't affect performance meaningfully.">B) It makes logging faster</button>
+                            <button class="quiz-option" data-correct="false" data-hint="LogTemp works too; the point is organization.">C) Because <code>LogTemp</code> doesn't compile</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li><code>UE_LOG(Category, Verbosity, TEXT("..."), ...)</code> is your <code>printf</code>; dereference <code>FString</code> args with <code>*</code> for <code>%s</code>.</li>
+                        <li>Define a <strong>custom log category</strong> (<code>DECLARE_/DEFINE_LOG_CATEGORY</code>) to filter your game's output and tune verbosity.</li>
+                        <li><code>GEngine-&gt;AddOnScreenDebugMessage</code> (guarded by <code>if (GEngine)</code>) shows feedback in the viewport.</li>
+                        <li>Assertions: <strong><code>check</code></strong> halts on invariant violations (dev only), <strong><code>ensure</code></strong> reports once and continues, <strong><code>verify</code></strong> keeps the expression in shipping.</li>
+                        <li><strong>Debug drawing</strong> (<code>DrawDebugLine/Sphere/Point</code>) makes spatial logic visible — essential for the traces in Module 5.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/logging-in-unreal-engine" target="_blank" rel="noopener">Logging in Unreal Engine (Epic)</a></li>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/asserts-in-unreal-engine" target="_blank" rel="noopener">Asserts: check, ensure, verify (Epic)</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p><strong>Module 2 is complete</strong> — you understand reflection, types, memory, and debugging, the foundation everything else stands on. <strong>Module 3</strong> puts it to work: the gameplay framework, writing real Actors and Components in C++, and their lifecycles.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Module 2 complete!</h3>
+                    <p>Foundations locked in. Time to build the things players actually see.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m02_l05_memory_and_garbage_collection.html" class="prev-lesson">← Previous: Memory &amp; Garbage Collection</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m03_l01_gameplay_framework_map.html" class="next-lesson">Next: The Gameplay Framework Map →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

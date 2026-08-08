@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="A focused C++ refresher for Unreal: references vs pointers, const correctness, headers and forward declarations, and the templates and macros Unreal leans on.">
+    <meta name="author" content="Ray de la Paz">
+    <title>A C++ Refresher, Unreal-Flavored — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 1</a></li>
+            <li aria-current="page">Lesson 1.4: A C++ Refresher, Unreal-Flavored</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>🔤 Lesson 1.4: A C++ Refresher, Unreal-Flavored</h1>
+                <p class="lead">This isn't a full C++ course — it's a targeted refresher on the handful of language features Unreal leans on hardest, taught with Unreal-shaped examples so the later lessons never blindside you.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Distinguish references, pointers, and values, and know which Unreal uses where</li>
+                        <li>Apply <code>const</code> correctly to parameters and member functions</li>
+                        <li>Explain the header/source split and use forward declarations to keep includes lean</li>
+                        <li>Read the template and macro syntax (<code>TArray&lt;T&gt;</code>, <code>Cast&lt;T&gt;</code>, <code>UPROPERTY()</code>) you'll meet everywhere</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 60 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Scope note</h4>
+                    <p>If terms like "class," "function," and "loop" are brand new, work through a general C++ primer first. This lesson assumes basic programming and focuses on the C++ that <em>Unreal</em> specifically demands.</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#ptr-ref" class="toc-link">Values, References &amp; Pointers</a></li>
+                        <li><a href="#const" class="toc-link">Const Correctness</a></li>
+                        <li><a href="#headers" class="toc-link">Headers &amp; Forward Declarations</a></li>
+                        <li><a href="#templates" class="toc-link">Templates &amp; Macros You'll See</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="ptr-ref" class="lesson-section">
+                <h2>Values, References &amp; Pointers</h2>
+                <p>Unreal C++ is full of <code>*</code> and <code>&amp;</code>. Getting these straight now saves endless confusion later, because Unreal has strong conventions about which to use.</p>
+
+                <h3>The three ways to pass and hold data</h3>
+                <pre><code class="language-cpp">int32 Health = 100;      // a VALUE: Health owns its own int
+
+int32&amp; RefHealth = Health; // a REFERENCE: another name for Health (no copy, can't be null)
+RefHealth = 80;            // this changes Health to 80
+
+int32* PtrHealth = &amp;Health; // a POINTER: holds the address of Health; CAN be null
+*PtrHealth = 50;            // "dereference" to reach the value; sets Health to 50
+PtrHealth = nullptr;        // pointers can be reseated or nulled</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 The distinction that matters</h4>
+                    <p>A <strong>reference</strong> is an alias — it always refers to a valid object and can't be reseated. A <strong>pointer</strong> holds an address, can be <code>nullptr</code>, and can be changed to point elsewhere. "Can this legitimately be nothing?" is usually what decides between them.</p>
+                </div>
+
+                <h3>How Unreal uses each</h3>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Situation</th><th>Unreal convention</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td>Passing a big struct you won't modify</td><td><code>const FHitResult&amp;</code> — reference avoids a copy</td></tr>
+                            <tr><td>Referring to another actor/UObject</td><td><code>AActor*</code> — a pointer (it might be null or get destroyed)</td></tr>
+                            <tr><td>Small values (int, float, bool, enum)</td><td>Pass by value — copying is cheap</td></tr>
+                            <tr><td>An "out" parameter a function fills in</td><td>Non-const reference, e.g. <code>FHitResult&amp; OutHit</code></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card card-warning">
+                    <h4>⚠️ The null-pointer trap</h4>
+                    <p>Because Unreal objects are referenced by pointers and can be destroyed, <strong>always check a pointer before using it</strong>: <code>if (Target) { Target->DoThing(); }</code>. Dereferencing a null pointer crashes. We'll formalize safe-access patterns (and the <code>IsValid()</code> helper) in Module 2.</p>
+                </div>
+            </section>
+
+            <section id="const" class="lesson-section">
+                <h2>Const Correctness</h2>
+                <p>Unreal code uses <code>const</code> heavily, and reading it fluently is a real skill. <code>const</code> is a promise to the compiler — and to other programmers — that something won't be modified.</p>
+
+                <pre><code class="language-cpp">// const parameter: this function promises not to change the passed struct
+float GetDamageFrom(const FAttackData&amp; Attack);
+
+// const member function: promises not to modify the object it's called on
+class AEnemy : public AActor
+{
+public:
+    // The trailing 'const' means: calling GetHealth() won't change this Enemy.
+    int32 GetHealth() const { return Health; }
+
+    // No trailing const: this one is allowed to modify the Enemy.
+    void TakeDamage(int32 Amount) { Health -= Amount; }
+
+private:
+    int32 Health = 100;
+};</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ Why it's worth it</h4>
+                    <p>A <code>const</code> reference lets you pass large objects with zero copy while guaranteeing you won't accidentally mutate them. A <code>const</code> member function documents intent and lets the compiler catch mistakes. Unreal's own API is thoroughly const-correct, so matching it makes your code interoperate cleanly.</p>
+                </div>
+
+                <blockquote>
+                    <strong>💡 Read it right-to-left:</strong> <code>const FAttackData&amp;</code> is "a reference to a const FAttackData." The <code>const</code> protects the data; the <code>&amp;</code> avoids the copy. That exact combination is the single most common parameter form in the engine.
+                </blockquote>
+            </section>
+
+            <section id="headers" class="lesson-section">
+                <h2>Headers &amp; Forward Declarations</h2>
+                <p>C++ splits a class across two files, and Unreal follows this rigorously:</p>
+
+                <div class="mermaid">
+                    graph LR
+                        H["MyActor.h<br/>declarations: what exists"] --> U["Used by other headers"]
+                        C["MyActor.cpp<br/>definitions: how it works"] --> B["Compiled into the module"]
+                        H --> C
+                </div>
+                <figure>
+                    <figcaption>Figure 1: The header declares the interface; the source defines the implementation. Other files include the header, not the source.</figcaption>
+                </figure>
+
+                <h3>The forward-declaration habit</h3>
+                <p>Including a header pulls in everything it includes — do that carelessly and compile times explode. Unreal's answer is the <strong>forward declaration</strong>: in a header, you often only need to say "this type exists," not include its full definition.</p>
+
+                <pre><code class="language-cpp">// MyActor.h
+
+// Forward declarations — we only use these as pointers here, so we don't
+// need their full headers yet. This keeps compile times down.
+class UStaticMeshComponent;
+class AEnemy;
+
+#include "GameFramework/Actor.h"
+#include "MyActor.generated.h"   // ALWAYS the last include in a UCLASS header
+
+UCLASS()
+class MYPROJECT_API AMyActor : public AActor
+{
+    GENERATED_BODY()
+
+public:
+    UPROPERTY(VisibleAnywhere)
+    UStaticMeshComponent* Mesh;   // pointer to a forward-declared type: fine
+
+    void ChaseTarget(AEnemy* Target);
+};</code></pre>
+
+                <pre><code class="language-cpp">// MyActor.cpp — here we DO need the full definitions, so we include them
+#include "MyActor.h"
+#include "Components/StaticMeshComponent.h"  // now we can use its members
+#include "Enemy.h"
+
+void AMyActor::ChaseTarget(AEnemy* Target)
+{
+    if (Target) { /* ... use Target's full API ... */ }
+}</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Two rules you must not break</h4>
+                    <ul>
+                        <li>The <code>#include "X.generated.h"</code> line must be the <strong>last</strong> include in any header that declares a <code>UCLASS</code>/<code>USTRUCT</code>/<code>UENUM</code>. The header tool generates it.</li>
+                        <li>Use forward declarations in headers when you only need a pointer or reference; include the full header in the <code>.cpp</code> where you actually call members. We revisit this discipline in Lesson 2.1.</li>
+                    </ul>
+                </div>
+            </section>
+
+            <section id="templates" class="lesson-section">
+                <h2>Templates &amp; Macros You'll See</h2>
+                <p>You don't need to <em>write</em> templates to use Unreal, but you'll <em>read</em> them constantly. Two syntaxes to be comfortable with:</p>
+
+                <h3>Templates: angle brackets mean "of what type"</h3>
+                <pre><code class="language-cpp">TArray&lt;int32&gt; Scores;        // a dynamic array OF int32
+TArray&lt;AActor*&gt; Enemies;      // a dynamic array OF actor pointers
+TMap&lt;FName, int32&gt; Inventory; // a map from FName keys TO int32 values
+
+// Cast&lt;T&gt; is a template too — safely converts a base pointer to a derived type,
+// returning nullptr if the object isn't actually that type:
+AEnemy* AsEnemy = Cast&lt;AEnemy&gt;(SomeActor);
+if (AsEnemy) { /* it really was an AEnemy */ }</code></pre>
+
+                <p>These are Unreal's own container and utility templates. We cover the containers in Lesson 2.4 and <code>Cast</code> in Module 2 — for now, just read <code>TArray&lt;AActor*&gt;</code> as "array of actor pointers" and move on.</p>
+
+                <h3>Macros: the CAPS words are code generators</h3>
+                <pre><code class="language-cpp">UCLASS()          // marks a class for the reflection system
+GENERATED_BODY()  // expands into engine-generated boilerplate
+UPROPERTY(...)    // exposes a member variable to the engine/editor
+UFUNCTION(...)    // exposes a function to the engine/Blueprint
+UE_LOG(...)       // logging</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 Why macros?</h4>
+                    <p>These uppercase tokens are <strong>macros</strong> processed by the Unreal Header Tool before the C++ compiler runs. They generate the reflection data that lets your class talk to the editor, Blueprint, serialization, and networking. You write a one-line macro; the tool writes hundreds of lines you never see. Module 2 pulls back this curtain.</p>
+                </div>
+
+                <blockquote>
+                    <strong>💡 Don't panic at unfamiliar CAPS:</strong> when you see an ALL-CAPS token followed by parentheses at class or member scope, it's almost certainly a reflection macro. You'll learn each one in context.
+                </blockquote>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: Read the code like Unreal</h3>
+                    <p><strong>Objective:</strong> Translate signatures into plain English — the everyday skill of reading engine code.</p>
+                    <p>Explain, in one sentence each, what these declarations promise:</p>
+                    <pre><code class="language-cpp">// A
+void ApplyDamage(const FDamageEvent&amp; Event, AActor* Instigator);
+
+// B
+float GetSpeed() const;
+
+// C
+TArray&lt;AActor*&gt; FindEnemiesInRadius(float Radius) const;</code></pre>
+
+                    <details>
+                        <summary>✅ Answers</summary>
+                        <ul>
+                            <li><strong>A:</strong> Takes a damage event <em>by const reference</em> (no copy, won't modify it) and an instigator <em>pointer</em> that may be null; returns nothing.</li>
+                            <li><strong>B:</strong> Returns the object's speed and promises <em>not to modify the object</em> (const member function).</li>
+                            <li><strong>C:</strong> Returns a <em>dynamic array of actor pointers</em> and doesn't modify the object it's called on.</li>
+                        </ul>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> Which should you use to refer to another actor that might be destroyed?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="A reference can't be null.">A) A reference (<code>AActor&amp;</code>)</button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — pointers can be null, matching the reality that the actor may not exist.">B) A pointer (<code>AActor*</code>)</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Copying an actor by value isn't how Unreal works.">C) A value (<code>AActor</code>)</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> What does the trailing <code>const</code> in <code>int32 GetHealth() const;</code> guarantee?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="It's about the object, not the return value's storage.">A) The return value can't be stored</button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — a const member function won't modify the object it's called on.">B) The function won't modify the object it's called on</button>
+                            <button class="quiz-option" data-correct="false" data-hint="const doesn't mean compile-time here.">C) The function runs at compile time</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> Where must <code>#include "MyActor.generated.h"</code> appear?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="Order matters here.">A) First, before all other includes</button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — the generated header include must be the last include in the file.">B) Last, after all other includes</button>
+                            <button class="quiz-option" data-correct="false" data-hint="It belongs in the header, not the source.">C) In the .cpp file only</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li><strong>References</strong> alias a valid object (no copy, never null); <strong>pointers</strong> hold an address (nullable, reseatable). Unreal refers to objects with pointers and always null-checks them.</li>
+                        <li><code>const FThing&amp;</code> parameters pass big data cheaply and safely; a trailing <code>const</code> on a method promises it won't modify the object.</li>
+                        <li>Headers <strong>declare</strong>, sources <strong>define</strong>; use <strong>forward declarations</strong> in headers to keep includes and compile times lean.</li>
+                        <li>The <code>#include "X.generated.h"</code> line is always the <strong>last</strong> include in a reflected header.</li>
+                        <li>Read <code>TArray&lt;T&gt;</code>/<code>Cast&lt;T&gt;</code> as "of type T," and treat ALL-CAPS <code>U*</code> tokens as reflection macros you'll learn in context.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/epic-cplusplus-coding-standard-for-unreal-engine" target="_blank" rel="noopener">Epic C++ Coding Standard (Epic)</a></li>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-engine-programming-and-scripting" target="_blank" rel="noopener">Programming &amp; Scripting overview (Epic)</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p>Language ready, tools ready. Time for the moment it all pays off: creating your first C++ class in the editor, compiling it, and watching Live Coding turn edits into running behavior in seconds.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Lesson complete!</h3>
+                    <p>You can read Unreal C++. Now let's write some.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m01_l03_cpp_toolchain_setup.html" class="prev-lesson">← Previous: Setting Up the C++ Toolchain</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m01_l05_first_class_and_live_coding.html" class="next-lesson">Next: Your First C++ Class &amp; the Live Coding Loop →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

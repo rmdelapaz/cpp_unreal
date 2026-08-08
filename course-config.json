@@ -1,0 +1,187 @@
+{
+  "course": {
+    "title": "C++ for Unreal Engine",
+    "subtitle": "Programming Gameplay in C++ for Unreal Engine 5.8",
+    "description": "A complete, standalone course on writing C++ with and for Unreal Engine 5.8. Goes beyond Blueprints to teach the reflection system, the gameplay framework in C++, C++/Blueprint interop, data and persistence, plugins, UI, networking, and performance — culminating in a full C++ gameplay feature.",
+    "author": {
+      "name": "Ray de la Paz",
+      "email": "contact via website",
+      "website": "https://rays-home.netlify.app/",
+      "bio": "Technical trainer, full-stack developer, and course developer with 30+ years of experience."
+    },
+    "version": "1.0.0",
+    "lastUpdated": "2026-08-07",
+    "language": "en",
+    "difficulty": "intermediate",
+    "engineVersion": "Unreal Engine 5.8",
+    "estimatedHours": 55,
+    "tags": ["unreal-engine", "c++", "game-development", "ue5", "gameplay-programming", "blueprints", "networking"]
+  },
+
+  "branding": {
+    "primaryColor": "#3b82f6",
+    "secondaryColor": "#f8fafc",
+    "accentColor": "#6366f1",
+    "fontFamily": "Segoe UI, system-ui, -apple-system, sans-serif",
+    "logo": "images/logo.png",
+    "favicon": "favicon.png"
+  },
+
+  "navigation": {
+    "showBreadcrumbs": true,
+    "showProgressBar": false,
+    "showLessonNav": true,
+    "showSearch": true,
+    "showThemeToggle": true,
+    "keyboardShortcuts": true,
+    "externalLinks": [
+      { "label": "Ray's House of Fun", "url": "https://rays-home.netlify.app/" },
+      { "label": "Contact", "url": "https://rays-home.netlify.app/contact" }
+    ]
+  },
+
+  "modules": [
+    {
+      "id": "module-1",
+      "title": "Orientation & Setup",
+      "description": "Where C++ fits in Unreal, the editor from a programmer's view, the toolchain, an Unreal-flavored C++ refresher, and your first compile.",
+      "lessons": [
+        { "id": "lesson-1-1", "title": "Why C++ in Unreal: C++ vs Blueprint & the Hybrid Model", "filename": "m01_l01_why_cpp_in_unreal.html", "duration": "45 minutes", "difficulty": "beginner" },
+        { "id": "lesson-1-2", "title": "The Unreal Editor for Programmers", "filename": "m01_l02_editor_orientation_for_programmers.html", "duration": "45 minutes", "difficulty": "beginner" },
+        { "id": "lesson-1-3", "title": "Setting Up the C++ Toolchain", "filename": "m01_l03_cpp_toolchain_setup.html", "duration": "60 minutes", "difficulty": "beginner" },
+        { "id": "lesson-1-4", "title": "A C++ Refresher, Unreal-Flavored", "filename": "m01_l04_cpp_refresher_for_unreal.html", "duration": "60 minutes", "difficulty": "beginner" },
+        { "id": "lesson-1-5", "title": "Your First C++ Class & the Live Coding Loop", "filename": "m01_l05_first_class_and_live_coding.html", "duration": "60 minutes", "difficulty": "beginner" }
+      ]
+    },
+    {
+      "id": "module-2",
+      "title": "Unreal C++ Foundations",
+      "description": "The reflection system, property and function specifiers, Unreal's core types and containers, memory and garbage collection, and debugging.",
+      "lessons": [
+        { "id": "lesson-2-1", "title": "Project & Module Anatomy and the Coding Standard", "filename": "m02_l01_project_and_module_anatomy.html", "duration": "45 minutes", "difficulty": "intermediate" },
+        { "id": "lesson-2-2", "title": "The Reflection System: UCLASS, USTRUCT, UENUM", "filename": "m02_l02_reflection_system.html", "duration": "60 minutes", "difficulty": "intermediate" },
+        { "id": "lesson-2-3", "title": "UPROPERTY & UFUNCTION Specifiers", "filename": "m02_l03_uproperty_ufunction_specifiers.html", "duration": "60 minutes", "difficulty": "intermediate" },
+        { "id": "lesson-2-4", "title": "Unreal Core Types: FString, FName, FText & Containers", "filename": "m02_l04_unreal_core_types.html", "duration": "60 minutes", "difficulty": "intermediate" },
+        { "id": "lesson-2-5", "title": "Memory & Garbage Collection", "filename": "m02_l05_memory_and_garbage_collection.html", "duration": "60 minutes", "difficulty": "intermediate" },
+        { "id": "lesson-2-6", "title": "Logging, Assertions & Debugging C++", "filename": "m02_l06_logging_asserts_debugging.html", "duration": "45 minutes", "difficulty": "intermediate" }
+      ]
+    },
+    {
+      "id": "module-3",
+      "title": "Actors, Components & the Gameplay Framework",
+      "description": "The gameplay framework class map, writing Actors and custom Components in C++, subobjects and lifecycle, spawning, and actor communication.",
+      "lessons": [
+        { "id": "lesson-3-1", "title": "The Gameplay Framework Map", "filename": "m03_l01_gameplay_framework_map.html", "duration": "45 minutes", "difficulty": "intermediate" },
+        { "id": "lesson-3-2", "title": "Writing Actors in C++", "filename": "m03_l02_writing_actors_in_cpp.html", "duration": "60 minutes", "difficulty": "intermediate" },
+        { "id": "lesson-3-3", "title": "Custom Actor & Scene Components", "filename": "m03_l03_custom_components.html", "duration": "60 minutes", "difficulty": "intermediate" },
+        { "id": "lesson-3-4", "title": "Spawning, Destroying & Iterating Actors", "filename": "m03_l04_spawning_and_lifecycle.html", "duration": "60 minutes", "difficulty": "intermediate" },
+        { "id": "lesson-3-5", "title": "Actor Communication Patterns", "filename": "m03_l05_actor_communication.html", "duration": "45 minutes", "difficulty": "intermediate" }
+      ]
+    },
+    {
+      "id": "module-4",
+      "title": "Input & Player Control",
+      "description": "Enhanced Input in C++, Pawns and Characters and movement, and the PlayerController and possession flow.",
+      "lessons": [
+        { "id": "lesson-4-1", "title": "Enhanced Input in C++", "filename": "m04_l01_enhanced_input_in_cpp.html", "duration": "60 minutes", "difficulty": "intermediate" },
+        { "id": "lesson-4-2", "title": "Pawns, Characters & Movement", "filename": "m04_l02_pawns_characters_movement.html", "duration": "60 minutes", "difficulty": "intermediate" },
+        { "id": "lesson-4-3", "title": "PlayerController & Possession", "filename": "m04_l03_playercontroller_possession.html", "duration": "45 minutes", "difficulty": "intermediate" }
+      ]
+    },
+    {
+      "id": "module-5",
+      "title": "Interaction & Events",
+      "description": "Collision and overlap and hit events, traces and spatial queries, timers, delegates and events, and interfaces for decoupled communication.",
+      "lessons": [
+        { "id": "lesson-5-1", "title": "Collision, Overlaps & Hit Events", "filename": "m05_l01_collision_overlap_hit.html", "duration": "60 minutes", "difficulty": "intermediate" },
+        { "id": "lesson-5-2", "title": "Traces & Spatial Queries", "filename": "m05_l02_traces_and_queries.html", "duration": "60 minutes", "difficulty": "intermediate" },
+        { "id": "lesson-5-3", "title": "Timers & Latent Actions", "filename": "m05_l03_timers_and_latent_actions.html", "duration": "45 minutes", "difficulty": "intermediate" },
+        { "id": "lesson-5-4", "title": "Delegates & Events", "filename": "m05_l04_delegates_and_events.html", "duration": "60 minutes", "difficulty": "advanced" },
+        { "id": "lesson-5-5", "title": "Interfaces (UINTERFACE)", "filename": "m05_l05_interfaces.html", "duration": "60 minutes", "difficulty": "advanced" }
+      ]
+    },
+    {
+      "id": "module-6",
+      "title": "C++ ↔ Blueprint Interop",
+      "description": "The heart of the course: exposing functions, properties, structs, enums, and data to Blueprint, and the C++-base / Blueprint-subclass workflow.",
+      "lessons": [
+        { "id": "lesson-6-1", "title": "Exposing Functions to Blueprint", "filename": "m06_l01_exposing_functions.html", "duration": "60 minutes", "difficulty": "intermediate" },
+        { "id": "lesson-6-2", "title": "Exposing Properties to Blueprint", "filename": "m06_l02_exposing_properties.html", "duration": "45 minutes", "difficulty": "intermediate" },
+        { "id": "lesson-6-3", "title": "Exposing Structs, Enums & Data", "filename": "m06_l03_exposing_structs_enums_data.html", "duration": "60 minutes", "difficulty": "intermediate" },
+        { "id": "lesson-6-4", "title": "The C++ Base / Blueprint Subclass Pattern", "filename": "m06_l04_cpp_base_blueprint_subclass.html", "duration": "60 minutes", "difficulty": "advanced" }
+      ]
+    },
+    {
+      "id": "module-7",
+      "title": "Data, Config & Persistence",
+      "description": "Driving your game from data with DataTables and DataAssets, config properties and .ini, saving and loading, and Subsystems as the modern singleton.",
+      "lessons": [
+        { "id": "lesson-7-1", "title": "DataTables & DataAssets in C++", "filename": "m07_l01_datatables_and_dataassets.html", "duration": "60 minutes", "difficulty": "intermediate" },
+        { "id": "lesson-7-2", "title": "Config Properties & .ini Files", "filename": "m07_l02_config_properties.html", "duration": "45 minutes", "difficulty": "intermediate" },
+        { "id": "lesson-7-3", "title": "Saving & Loading with SaveGame", "filename": "m07_l03_savegame.html", "duration": "60 minutes", "difficulty": "intermediate" },
+        { "id": "lesson-7-4", "title": "Subsystems: The Modern Singleton", "filename": "m07_l04_subsystems.html", "duration": "60 minutes", "difficulty": "advanced" }
+      ]
+    },
+    {
+      "id": "module-8",
+      "title": "Modules, Build System & Plugins",
+      "description": "Unreal's module and build system in depth, integrating third-party libraries, and packaging your code as a reusable C++ plugin.",
+      "lessons": [
+        { "id": "lesson-8-1", "title": "Modules in Depth: Build.cs & Target.cs", "filename": "m08_l01_modules_and_build_cs.html", "duration": "60 minutes", "difficulty": "advanced" },
+        { "id": "lesson-8-2", "title": "Integrating Third-Party Libraries", "filename": "m08_l02_third_party_libraries.html", "duration": "60 minutes", "difficulty": "advanced" },
+        { "id": "lesson-8-3", "title": "Writing a C++ Plugin", "filename": "m08_l03_writing_a_cpp_plugin.html", "duration": "60 minutes", "difficulty": "advanced" }
+      ]
+    },
+    {
+      "id": "module-9",
+      "title": "UI from C++ (UMG)",
+      "description": "Creating and driving UMG user widgets from C++, binding data, and handling UI events in native code.",
+      "lessons": [
+        { "id": "lesson-9-1", "title": "UserWidget & UMG in C++", "filename": "m09_l01_userwidget_in_cpp.html", "duration": "60 minutes", "difficulty": "intermediate" },
+        { "id": "lesson-9-2", "title": "Data Binding & UI Events from C++", "filename": "m09_l02_data_binding_and_events.html", "duration": "60 minutes", "difficulty": "advanced" }
+      ]
+    },
+    {
+      "id": "module-10",
+      "title": "Networking & Replication in C++",
+      "description": "The multiplayer model, property replication and RepNotify, RPCs, and a full walkthrough of replicating a gameplay feature.",
+      "lessons": [
+        { "id": "lesson-10-1", "title": "The Multiplayer Model: Roles, Ownership & Authority", "filename": "m10_l01_multiplayer_model.html", "duration": "60 minutes", "difficulty": "advanced" },
+        { "id": "lesson-10-2", "title": "Property Replication & RepNotify", "filename": "m10_l02_property_replication.html", "duration": "60 minutes", "difficulty": "advanced" },
+        { "id": "lesson-10-3", "title": "RPCs: Server, Client & Multicast", "filename": "m10_l03_rpcs.html", "duration": "60 minutes", "difficulty": "advanced" },
+        { "id": "lesson-10-4", "title": "Replicating a Gameplay Feature", "filename": "m10_l04_networked_feature_walkthrough.html", "duration": "75 minutes", "difficulty": "advanced" }
+      ]
+    },
+    {
+      "id": "module-11",
+      "title": "Performance, Async & Profiling",
+      "description": "Async and multithreading the Unreal way, and profiling with Unreal Insights alongside practical optimization patterns.",
+      "lessons": [
+        { "id": "lesson-11-1", "title": "Async & Multithreading", "filename": "m11_l01_async_and_multithreading.html", "duration": "60 minutes", "difficulty": "advanced" },
+        { "id": "lesson-11-2", "title": "Profiling with Unreal Insights & Optimization", "filename": "m11_l02_profiling_and_optimization.html", "duration": "60 minutes", "difficulty": "advanced" }
+      ]
+    },
+    {
+      "id": "module-12",
+      "title": "Capstone",
+      "description": "Bring it all together: build a complete C++ gameplay feature that integrates interop, data, persistence, UI, and optional replication.",
+      "lessons": [
+        { "id": "lesson-12-1", "title": "Capstone: A Complete C++ Gameplay Feature", "filename": "m12_l01_capstone_cpp_gameplay_feature.html", "duration": "90 minutes", "difficulty": "advanced" }
+      ]
+    }
+  ],
+
+  "features": {
+    "codeHighlighting": true,
+    "copyCodeButton": true,
+    "progressTracking": false,
+    "offlineSupport": false,
+    "responsiveDesign": true,
+    "accessibility": true,
+    "printFriendly": true,
+    "searchEnabled": true,
+    "darkMode": true,
+    "mermaidDiagrams": true,
+    "svgDarkModeSupport": true
+  }
+}

@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="A practical guide to the UPROPERTY and UFUNCTION specifiers in Unreal Engine 5.8: EditAnywhere, BlueprintReadWrite, VisibleAnywhere, categories, meta, and the common function specifiers.">
+    <meta name="author" content="Ray de la Paz">
+    <title>UPROPERTY &amp; UFUNCTION Specifiers — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 2</a></li>
+            <li aria-current="page">Lesson 2.3: UPROPERTY &amp; UFUNCTION Specifiers</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>🎛️ Lesson 2.3: UPROPERTY &amp; UFUNCTION Specifiers</h1>
+                <p class="lead">The macros from the last lesson take <em>specifiers</em> — the keywords in the parentheses that decide exactly how a member surfaces. Master a dozen of these and you can shape precisely what the editor shows, what Blueprint can touch, and what stays private to C++.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Choose the right edit/visibility specifier: <code>EditAnywhere</code>, <code>VisibleAnywhere</code>, <code>EditDefaultsOnly</code>, <code>EditInstanceOnly</code></li>
+                        <li>Control Blueprint access with <code>BlueprintReadWrite</code> vs <code>BlueprintReadOnly</code></li>
+                        <li>Organize the Details panel with <code>Category</code> and refine behavior with <code>meta</code></li>
+                        <li>Apply the common <code>UFUNCTION</code> specifiers: <code>BlueprintCallable</code>, <code>BlueprintPure</code>, <code>CallInEditor</code></li>
+                        <li>Recognize why a forgotten <code>UPROPERTY</code> can get your pointer garbage-collected</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 60 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#edit-vis" class="toc-link">Edit vs Visible</a></li>
+                        <li><a href="#bp-access" class="toc-link">Blueprint Access</a></li>
+                        <li><a href="#category-meta" class="toc-link">Category &amp; Meta</a></li>
+                        <li><a href="#ufunction" class="toc-link">UFUNCTION Specifiers</a></li>
+                        <li><a href="#gc-note" class="toc-link">The Silent GC Trap</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="edit-vis" class="lesson-section">
+                <h2>Edit vs Visible</h2>
+                <p>The first choice for any property: can it be <em>edited</em> in the Details panel, or only <em>viewed</em>? And does that apply to the class defaults, to placed instances, or both? Two axes, combined into keywords:</p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Specifier</th><th>Editable?</th><th>Where</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>EditAnywhere</code></td><td>Yes</td><td>Class defaults (Blueprint/archetype) AND placed instances</td></tr>
+                            <tr><td><code>EditDefaultsOnly</code></td><td>Yes</td><td>Class defaults only (not per-instance)</td></tr>
+                            <tr><td><code>EditInstanceOnly</code></td><td>Yes</td><td>Placed instances only (not the default)</td></tr>
+                            <tr><td><code>VisibleAnywhere</code></td><td>No (read-only display)</td><td>Defaults AND instances</td></tr>
+                            <tr><td><code>VisibleDefaultsOnly</code> / <code>VisibleInstanceOnly</code></td><td>No</td><td>Defaults / instances respectively</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <pre><code class="language-cpp">// A tunable designers set on the Blueprint default and per placed actor:
+UPROPERTY(EditAnywhere, Category = "Combat")
+float FireRate = 5.0f;
+
+// A component pointer: shown for inspection, but you don't reassign it by hand:
+UPROPERTY(VisibleAnywhere, Category = "Components")
+UStaticMeshComponent* Mesh;
+
+// A value that should be identical for every instance of a weapon type —
+// edit it on the Blueprint default, not per-instance:
+UPROPERTY(EditDefaultsOnly, Category = "Combat")
+int32 MagazineSize = 30;</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ Pro Tip</h4>
+                    <p>Use <code>VisibleAnywhere</code> for component pointers (you want to see them, not swap them) and <code>EditDefaultsOnly</code> for values that define a <em>type</em> rather than an <em>instance</em>. Reserve <code>EditAnywhere</code> for things a designer legitimately tunes per placed actor.</p>
+                </div>
+            </section>
+
+            <section id="bp-access" class="lesson-section">
+                <h2>Blueprint Access</h2>
+                <p>Separately from the editor, you control whether <em>Blueprint graphs</em> can read or write a property. These stack with the edit/visible specifiers:</p>
+
+                <ul>
+                    <li><code>BlueprintReadWrite</code> — Blueprint can get <em>and</em> set the value</li>
+                    <li><code>BlueprintReadOnly</code> — Blueprint can get but not set (good for state C++ owns)</li>
+                    <li>(neither) — invisible to Blueprint entirely</li>
+                </ul>
+
+                <pre><code class="language-cpp">// Designers tune it in Details AND Blueprint logic can change it at runtime:
+UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat")
+float Damage = 25.0f;
+
+// Blueprint can read current health for a HUD, but only C++ changes it:
+UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State")
+float CurrentHealth = 100.0f;</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 Two independent questions</h4>
+                    <p>"Can the <strong>editor</strong> edit it?" (<code>EditAnywhere</code>/<code>VisibleAnywhere</code>…) and "Can <strong>Blueprint graphs</strong> touch it?" (<code>BlueprintReadWrite</code>/<code>BlueprintReadOnly</code>) are separate. You combine one from each axis. <code>VisibleAnywhere, BlueprintReadOnly</code> means "show it, don't let anyone edit it by hand or in script" — perfect for C++-owned state.</p>
+                </div>
+            </section>
+
+            <section id="category-meta" class="lesson-section">
+                <h2>Category &amp; Meta</h2>
+                <p>As your classes grow, the Details panel gets crowded. <code>Category</code> groups properties into collapsible sections; nested categories use <code>|</code>.</p>
+
+                <pre><code class="language-cpp">UPROPERTY(EditAnywhere, Category = "Combat|Ranged")
+float Range = 5000.0f;
+
+UPROPERTY(EditAnywhere, Category = "Combat|Ranged")
+float Spread = 2.0f;</code></pre>
+
+                <p><code>meta</code> unlocks finer control. A few you'll use constantly:</p>
+
+                <pre><code class="language-cpp">// Clamp the slider AND the typed value between 0 and 100:
+UPROPERTY(EditAnywhere, Category = "Stats",
+    meta = (ClampMin = "0.0", ClampMax = "100.0", UIMin = "0.0", UIMax = "100.0"))
+float HealthPercent = 100.0f;
+
+// Only show this property when bUseSpread is true:
+UPROPERTY(EditAnywhere, Category = "Combat",
+    meta = (EditCondition = "bUseSpread"))
+float SpreadAngle = 2.0f;
+
+UPROPERTY(EditAnywhere, Category = "Combat")
+bool bUseSpread = false;</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ Pro Tip</h4>
+                    <p><code>ClampMin/ClampMax</code> enforce hard limits (typed values are clamped too); <code>UIMin/UIMax</code> only set the slider range. <code>EditCondition</code> creates dependent properties that gray out or hide — a clean way to build self-documenting inspectors.</p>
+                </div>
+            </section>
+
+            <section id="ufunction" class="lesson-section">
+                <h2>UFUNCTION Specifiers</h2>
+                <p><code>UFUNCTION</code> exposes a C++ function to the reflection system — most often to make it callable from Blueprint. The everyday specifiers:</p>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Specifier</th><th>Effect</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><code>BlueprintCallable</code></td><td>Callable from Blueprint as an action node (has an execution pin)</td></tr>
+                            <tr><td><code>BlueprintPure</code></td><td>Callable with no side effects — no exec pin, used like a getter</td></tr>
+                            <tr><td><code>CallInEditor</code></td><td>Adds a button in the Details panel to run it in-editor</td></tr>
+                            <tr><td><code>BlueprintImplementableEvent</code></td><td>Declared in C++, <em>implemented</em> in Blueprint (Module 6)</td></tr>
+                            <tr><td><code>BlueprintNativeEvent</code></td><td>C++ default that Blueprint can override (Module 6)</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <pre><code class="language-cpp">// An action a designer can call from a Blueprint graph:
+UFUNCTION(BlueprintCallable, Category = "Combat")
+void Fire();
+
+// A pure getter — shows as a node with only a return value, no exec pins:
+UFUNCTION(BlueprintPure, Category = "State")
+bool IsAlive() const;
+
+// A handy editor button, e.g. to reset or randomize during level design:
+UFUNCTION(CallInEditor, Category = "Debug")
+void ResetToDefaults();</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ BlueprintPure = promise of no side effects</h4>
+                    <p>Mark a function <code>BlueprintPure</code> only if it truly doesn't change state — it's a getter/query. Blueprint may call a pure node multiple times or in any order. Marking a state-changing function pure leads to baffling bugs. If in doubt, use <code>BlueprintCallable</code>.</p>
+                </div>
+            </section>
+
+            <section id="gc-note" class="lesson-section">
+                <h2>The Silent GC Trap</h2>
+                <p>Here's a subtle but critical reason <code>UPROPERTY</code> matters beyond the editor. Unreal garbage-collects <code>UObject</code>s. The garbage collector only "sees" a pointer as keeping an object alive if that pointer is a reflected <code>UPROPERTY</code>. A raw, un-reflected <code>UObject*</code> is invisible to the GC.</p>
+
+                <pre><code class="language-cpp">UCLASS()
+class MYPROJECT_API AWeapon : public AActor
+{
+    GENERATED_BODY()
+
+    // SAFE: the GC sees this pointer and keeps the ammo object alive.
+    UPROPERTY()
+    UAmmoData* CurrentAmmo;
+
+    // DANGER: no UPROPERTY — the GC can't see this. The object it points to
+    // may be collected out from under you, leaving a dangling pointer.
+    UAmmoData* CachedAmmo;   // ⚠ do not do this for UObject pointers
+};</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 The rule you'll never break again</h4>
+                    <p><strong>Every <code>UObject*</code> member you want to keep alive must be a <code>UPROPERTY()</code></strong> — even an empty <code>UPROPERTY()</code> with no specifiers works, because the point is GC visibility, not editor exposure. We unpack the full memory model in Lesson 2.5; for now, treat "UObject pointer member → UPROPERTY" as automatic.</p>
+                </div>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: Specify a weapon</h3>
+                    <p><strong>Objective:</strong> Pick specifiers deliberately for each member.</p>
+                    <p>Declare properties/functions for a weapon with these requirements:</p>
+                    <ol>
+                        <li><code>Damage</code> — designers tune per instance; Blueprint may modify at runtime; clamp 0–1000</li>
+                        <li><code>MagazineSize</code> — same for all weapons of a type; not per-instance</li>
+                        <li><code>CurrentAmmo</code> — C++ owns it; HUD Blueprint reads it; shown read-only</li>
+                        <li><code>Fire()</code> — callable from Blueprint, has effects</li>
+                        <li>A pointer to a <code>UAmmoData</code> that must survive garbage collection</li>
+                    </ol>
+
+                    <details>
+                        <summary>✅ Sample solution</summary>
+                        <pre><code class="language-cpp">UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat",
+    meta = (ClampMin = "0.0", ClampMax = "1000.0"))
+float Damage = 25.0f;
+
+UPROPERTY(EditDefaultsOnly, Category = "Combat")
+int32 MagazineSize = 30;
+
+UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State")
+int32 CurrentAmmo = 30;
+
+UFUNCTION(BlueprintCallable, Category = "Combat")
+void Fire();
+
+UPROPERTY()   // GC visibility — no editor exposure needed
+UAmmoData* AmmoData;</code></pre>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> You want a value editable on the Blueprint default but NOT on each placed actor. Use:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="That allows per-instance edits too.">A) <code>EditAnywhere</code></button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — EditDefaultsOnly limits editing to the class default.">B) <code>EditDefaultsOnly</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="That's read-only.">C) <code>VisibleAnywhere</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> A function that only computes and returns a value, no state change. Best specifier:</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — BlueprintPure is for side-effect-free getters/queries.">A) <code>BlueprintPure</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="That implies an action with an exec pin.">B) <code>BlueprintCallable</code> only</button>
+                            <button class="quiz-option" data-correct="false" data-hint="That's Blueprint-implemented, a different purpose.">C) <code>BlueprintImplementableEvent</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> Why must a <code>UObject*</code> member you keep be a <code>UPROPERTY()</code>?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — only reflected pointers are visible to the garbage collector as keeping the object alive.">A) Otherwise the garbage collector can't see it and may destroy the object</button>
+                            <button class="quiz-option" data-correct="false" data-hint="It's about GC, not compilation.">B) Otherwise it won't compile</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Exposure is optional; GC visibility is the real reason.">C) Only so it appears in the editor</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li>Edit/visible specifiers control the <strong>editor</strong>: <code>EditAnywhere</code>, <code>EditDefaultsOnly</code>, <code>EditInstanceOnly</code>, and the read-only <code>Visible*</code> forms.</li>
+                        <li>Blueprint access is a <strong>separate</strong> axis: <code>BlueprintReadWrite</code>, <code>BlueprintReadOnly</code>, or neither — combine one from each axis.</li>
+                        <li><code>Category</code> (with <code>|</code> nesting) organizes the Details panel; <code>meta</code> adds <code>ClampMin/Max</code>, <code>UIMin/Max</code>, <code>EditCondition</code>, and more.</li>
+                        <li><code>UFUNCTION</code> exposes functions: <code>BlueprintCallable</code> (action), <code>BlueprintPure</code> (side-effect-free getter), <code>CallInEditor</code> (a button).</li>
+                        <li>Any <code>UObject*</code> member you want kept alive <strong>must</strong> be a <code>UPROPERTY()</code> — that's how the GC sees it.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-engine-uproperties" target="_blank" rel="noopener">UProperties (Epic)</a></li>
+                    <li><a href="https://benui.ca/unreal/uproperty/" target="_blank" rel="noopener">BenUI — the community UPROPERTY/UFUNCTION specifier reference</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p>You can shape how any member surfaces. Next we meet the <strong>types</strong> those members hold — Unreal's own strings (<code>FString</code>/<code>FName</code>/<code>FText</code>) and containers (<code>TArray</code>/<code>TMap</code>/<code>TSet</code>) — and why you use them instead of the C++ standard library.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Lesson complete!</h3>
+                    <p>You speak specifier now. On to Unreal's types.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m02_l02_reflection_system.html" class="prev-lesson">← Previous: The Reflection System</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m02_l04_unreal_core_types.html" class="next-lesson">Next: Unreal Core Types &amp; Containers →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

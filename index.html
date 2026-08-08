@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="A complete, standalone course on writing C++ with and for Unreal Engine 5.8 — the reflection system, the gameplay framework in C++, C++/Blueprint interop, data, plugins, UI, networking, and performance.">
+    <meta name="author" content="Ray de la Paz">
+    <title>C++ for Unreal Engine - Home</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+</head>
+<body>
+    <!-- Skip to main content for accessibility -->
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+
+    <!-- Navigation -->
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">
+                ☰
+            </button>
+            <div class="nav-links" id="nav-links">
+                <a href="#introduction">Introduction</a>
+                <a href="#modules">Modules</a>
+                <a href="#prerequisites">Prerequisites</a>
+                <a href="#resources">Resources</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Breadcrumb -->
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li aria-current="page">Home</li>
+        </ul>
+    </nav>
+
+    <!-- Main Content -->
+    <main id="main-content">
+        <div class="container">
+            <!-- Hero Section -->
+            <header>
+                <h1>🎮 C++ for Unreal Engine</h1>
+                <p class="lead">Programming gameplay in C++ with and for Unreal Engine 5.8 — beyond Blueprints, into the code that powers real games.</p>
+            </header>
+
+            <!-- Introduction Section -->
+            <section id="introduction" class="card">
+                <h2>📚 About This Course</h2>
+                <p>Blueprints are wonderful, but sooner or later serious Unreal work reaches for C++: for performance, for reusable systems, for engine features Blueprints never expose, and for the clean base classes your designers extend visually. This course is about that layer — writing C++ <em>with</em> Unreal (its types, its rules, its reflection system) and <em>for</em> Unreal (actors, gameplay, data, UI, networking).</p>
+                <p>It is <strong>standalone</strong>: a short on-ramp orients you to the editor from a programmer's perspective and refreshes the C++ features Unreal leans on hardest, so you don't need a prior Unreal or C++ course to keep up. From there we go deep, one system at a time, always tying native code back to the Blueprint workflow you already know. Every lesson uses real, compile-correct Unreal Engine 5.8 C++.</p>
+
+                <h3>What You'll Learn</h3>
+                <ul>
+                    <li>How Unreal's reflection system (<code>UCLASS</code>, <code>UPROPERTY</code>, <code>UFUNCTION</code>) makes C++ talk to the editor, Blueprint, serialization, and networking</li>
+                    <li>The gameplay framework in native code — Actors, Components, Pawns, Characters, Controllers, and their lifecycles</li>
+                    <li>Unreal's own types, containers, and memory model, and how garbage collection changes how you write C++</li>
+                    <li>The C++ ↔ Blueprint boundary: exposing functions, properties, structs, and events, and the base-class/subclass pattern that teams actually use</li>
+                    <li>Data-driven design, persistence, subsystems, modules, plugins, UMG UI, multiplayer replication, and performance profiling</li>
+                    <li>How to assemble a complete, shippable C++ gameplay feature from scratch</li>
+                </ul>
+
+                <h3>Who This Course Is For</h3>
+                <ul>
+                    <li>Blueprint-comfortable Unreal users ready to cross into C++</li>
+                    <li>Programmers from other engines or general C++ who want the Unreal-specific way of working</li>
+                    <li>Anyone who wants to understand what the engine is doing beneath the nodes</li>
+                </ul>
+            </section>
+
+            <!-- Course Modules/Lessons -->
+            <section id="modules">
+                <h2>📖 Course Modules</h2>
+                <p><strong>12 modules · 44 lessons · ~55 hours · Unreal Engine 5.8</strong></p>
+
+                <!-- Module 1 -->
+                <div class="card lesson-card">
+                    <h3>Module 1: Orientation &amp; Setup</h3>
+                    <p>Where C++ fits in Unreal, the editor from a programmer's view, the toolchain, an Unreal-flavored C++ refresher, and your first compile.</p>
+                    <ul>
+                        <li><a href="m01_l01_why_cpp_in_unreal.html" class="lesson-link">Lesson 1.1: Why C++ in Unreal — C++ vs Blueprint &amp; the Hybrid Model</a></li>
+                        <li><a href="m01_l02_editor_orientation_for_programmers.html" class="lesson-link">Lesson 1.2: The Unreal Editor for Programmers</a></li>
+                        <li><a href="m01_l03_cpp_toolchain_setup.html" class="lesson-link">Lesson 1.3: Setting Up the C++ Toolchain</a></li>
+                        <li><a href="m01_l04_cpp_refresher_for_unreal.html" class="lesson-link">Lesson 1.4: A C++ Refresher, Unreal-Flavored</a></li>
+                        <li><a href="m01_l05_first_class_and_live_coding.html" class="lesson-link">Lesson 1.5: Your First C++ Class &amp; the Live Coding Loop</a></li>
+                    </ul>
+                </div>
+
+                <!-- Module 2 -->
+                <div class="card lesson-card">
+                    <h3>Module 2: Unreal C++ Foundations</h3>
+                    <p>The reflection system, property and function specifiers, Unreal's core types and containers, memory and garbage collection, and debugging.</p>
+                    <ul>
+                        <li><a href="m02_l01_project_and_module_anatomy.html" class="lesson-link">Lesson 2.1: Project &amp; Module Anatomy and the Coding Standard</a></li>
+                        <li><a href="m02_l02_reflection_system.html" class="lesson-link">Lesson 2.2: The Reflection System — UCLASS, USTRUCT, UENUM</a></li>
+                        <li><a href="m02_l03_uproperty_ufunction_specifiers.html" class="lesson-link">Lesson 2.3: UPROPERTY &amp; UFUNCTION Specifiers</a></li>
+                        <li><a href="m02_l04_unreal_core_types.html" class="lesson-link">Lesson 2.4: Unreal Core Types — FString, FName, FText &amp; Containers</a></li>
+                        <li><a href="m02_l05_memory_and_garbage_collection.html" class="lesson-link">Lesson 2.5: Memory &amp; Garbage Collection</a></li>
+                        <li><a href="m02_l06_logging_asserts_debugging.html" class="lesson-link">Lesson 2.6: Logging, Assertions &amp; Debugging C++</a></li>
+                    </ul>
+                </div>
+
+                <!-- Module 3 -->
+                <div class="card lesson-card">
+                    <h3>Module 3: Actors, Components &amp; the Gameplay Framework</h3>
+                    <p>The gameplay framework class map, writing Actors and custom Components in C++, subobjects and lifecycle, spawning, and actor communication.</p>
+                    <ul>
+                        <li><a href="m03_l01_gameplay_framework_map.html" class="lesson-link">Lesson 3.1: The Gameplay Framework Map</a></li>
+                        <li><a href="m03_l02_writing_actors_in_cpp.html" class="lesson-link">Lesson 3.2: Writing Actors in C++</a></li>
+                        <li><a href="m03_l03_custom_components.html" class="lesson-link">Lesson 3.3: Custom Actor &amp; Scene Components</a></li>
+                        <li><a href="m03_l04_spawning_and_lifecycle.html" class="lesson-link">Lesson 3.4: Spawning, Destroying &amp; Iterating Actors</a></li>
+                        <li><a href="m03_l05_actor_communication.html" class="lesson-link">Lesson 3.5: Actor Communication Patterns</a></li>
+                    </ul>
+                </div>
+
+                <!-- Module 4 -->
+                <div class="card lesson-card">
+                    <h3>Module 4: Input &amp; Player Control</h3>
+                    <p>Enhanced Input in C++, Pawns and Characters and movement, and the PlayerController and possession flow.</p>
+                    <ul>
+                        <li><a href="m04_l01_enhanced_input_in_cpp.html" class="lesson-link">Lesson 4.1: Enhanced Input in C++</a></li>
+                        <li><a href="m04_l02_pawns_characters_movement.html" class="lesson-link">Lesson 4.2: Pawns, Characters &amp; Movement</a></li>
+                        <li><a href="m04_l03_playercontroller_possession.html" class="lesson-link">Lesson 4.3: PlayerController &amp; Possession</a></li>
+                    </ul>
+                </div>
+
+                <!-- Module 5 -->
+                <div class="card lesson-card">
+                    <h3>Module 5: Interaction &amp; Events</h3>
+                    <p>Collision, overlaps and hit events, traces and spatial queries, timers, delegates and events, and interfaces for decoupled communication.</p>
+                    <ul>
+                        <li><a href="m05_l01_collision_overlap_hit.html" class="lesson-link">Lesson 5.1: Collision, Overlaps &amp; Hit Events</a></li>
+                        <li><a href="m05_l02_traces_and_queries.html" class="lesson-link">Lesson 5.2: Traces &amp; Spatial Queries</a></li>
+                        <li><a href="m05_l03_timers_and_latent_actions.html" class="lesson-link">Lesson 5.3: Timers &amp; Latent Actions</a></li>
+                        <li><a href="m05_l04_delegates_and_events.html" class="lesson-link">Lesson 5.4: Delegates &amp; Events</a></li>
+                        <li><a href="m05_l05_interfaces.html" class="lesson-link">Lesson 5.5: Interfaces (UINTERFACE)</a></li>
+                    </ul>
+                </div>
+
+                <!-- Module 6 -->
+                <div class="card lesson-card">
+                    <h3>Module 6: C++ ↔ Blueprint Interop</h3>
+                    <p>The heart of the course: exposing functions, properties, structs, enums, and data to Blueprint, and the C++-base / Blueprint-subclass workflow.</p>
+                    <ul>
+                        <li><a href="m06_l01_exposing_functions.html" class="lesson-link">Lesson 6.1: Exposing Functions to Blueprint</a></li>
+                        <li><a href="m06_l02_exposing_properties.html" class="lesson-link">Lesson 6.2: Exposing Properties to Blueprint</a></li>
+                        <li><a href="m06_l03_exposing_structs_enums_data.html" class="lesson-link">Lesson 6.3: Exposing Structs, Enums &amp; Data</a></li>
+                        <li><a href="m06_l04_cpp_base_blueprint_subclass.html" class="lesson-link">Lesson 6.4: The C++ Base / Blueprint Subclass Pattern</a></li>
+                    </ul>
+                </div>
+
+                <!-- Module 7 -->
+                <div class="card lesson-card">
+                    <h3>Module 7: Data, Config &amp; Persistence</h3>
+                    <p>Driving your game from data with DataTables and DataAssets, config properties and .ini, saving and loading, and Subsystems as the modern singleton.</p>
+                    <ul>
+                        <li><a href="m07_l01_datatables_and_dataassets.html" class="lesson-link">Lesson 7.1: DataTables &amp; DataAssets in C++</a></li>
+                        <li><a href="m07_l02_config_properties.html" class="lesson-link">Lesson 7.2: Config Properties &amp; .ini Files</a></li>
+                        <li><a href="m07_l03_savegame.html" class="lesson-link">Lesson 7.3: Saving &amp; Loading with SaveGame</a></li>
+                        <li><a href="m07_l04_subsystems.html" class="lesson-link">Lesson 7.4: Subsystems — The Modern Singleton</a></li>
+                    </ul>
+                </div>
+
+                <!-- Module 8 -->
+                <div class="card lesson-card">
+                    <h3>Module 8: Modules, Build System &amp; Plugins</h3>
+                    <p>Unreal's module and build system in depth, integrating third-party libraries, and packaging your code as a reusable C++ plugin.</p>
+                    <ul>
+                        <li><a href="m08_l01_modules_and_build_cs.html" class="lesson-link">Lesson 8.1: Modules in Depth — Build.cs &amp; Target.cs</a></li>
+                        <li><a href="m08_l02_third_party_libraries.html" class="lesson-link">Lesson 8.2: Integrating Third-Party Libraries</a></li>
+                        <li><a href="m08_l03_writing_a_cpp_plugin.html" class="lesson-link">Lesson 8.3: Writing a C++ Plugin</a></li>
+                    </ul>
+                </div>
+
+                <!-- Module 9 -->
+                <div class="card lesson-card">
+                    <h3>Module 9: UI from C++ (UMG)</h3>
+                    <p>Creating and driving UMG user widgets from C++, binding data, and handling UI events in native code.</p>
+                    <ul>
+                        <li><a href="m09_l01_userwidget_in_cpp.html" class="lesson-link">Lesson 9.1: UserWidget &amp; UMG in C++</a></li>
+                        <li><a href="m09_l02_data_binding_and_events.html" class="lesson-link">Lesson 9.2: Data Binding &amp; UI Events from C++</a></li>
+                    </ul>
+                </div>
+
+                <!-- Module 10 -->
+                <div class="card lesson-card">
+                    <h3>Module 10: Networking &amp; Replication in C++</h3>
+                    <p>The multiplayer model, property replication and RepNotify, RPCs, and a full walkthrough of replicating a gameplay feature.</p>
+                    <ul>
+                        <li><a href="m10_l01_multiplayer_model.html" class="lesson-link">Lesson 10.1: The Multiplayer Model — Roles, Ownership &amp; Authority</a></li>
+                        <li><a href="m10_l02_property_replication.html" class="lesson-link">Lesson 10.2: Property Replication &amp; RepNotify</a></li>
+                        <li><a href="m10_l03_rpcs.html" class="lesson-link">Lesson 10.3: RPCs — Server, Client &amp; Multicast</a></li>
+                        <li><a href="m10_l04_networked_feature_walkthrough.html" class="lesson-link">Lesson 10.4: Replicating a Gameplay Feature</a></li>
+                    </ul>
+                </div>
+
+                <!-- Module 11 -->
+                <div class="card lesson-card">
+                    <h3>Module 11: Performance, Async &amp; Profiling</h3>
+                    <p>Async and multithreading the Unreal way, and profiling with Unreal Insights alongside practical optimization patterns.</p>
+                    <ul>
+                        <li><a href="m11_l01_async_and_multithreading.html" class="lesson-link">Lesson 11.1: Async &amp; Multithreading</a></li>
+                        <li><a href="m11_l02_profiling_and_optimization.html" class="lesson-link">Lesson 11.2: Profiling with Unreal Insights &amp; Optimization</a></li>
+                    </ul>
+                </div>
+
+                <!-- Module 12 -->
+                <div class="card lesson-card">
+                    <h3>Module 12: Capstone</h3>
+                    <p>Bring it all together: build a complete C++ gameplay feature that integrates interop, data, persistence, UI, and optional replication.</p>
+                    <ul>
+                        <li><a href="m12_l01_capstone_cpp_gameplay_feature.html" class="lesson-link">Lesson 12.1: Capstone — A Complete C++ Gameplay Feature</a></li>
+                    </ul>
+                </div>
+            </section>
+
+            <!-- Prerequisites Section -->
+            <section id="prerequisites" class="card">
+                <h2>✅ Prerequisites</h2>
+                <p>This course is standalone — Module 1 orients you to the editor and refreshes the C++ you'll rely on. To keep the pace comfortable, it helps to have:</p>
+                <ul>
+                    <li>Basic programming literacy (variables, functions, classes, loops) in <em>some</em> language — the Module 1 refresher covers the C++-specific parts</li>
+                    <li>Enough comfort in the Unreal Editor to open a project and place an actor (Module 1 gives a programmer-focused tour)</li>
+                    <li>A willingness to compile, break things, and read build output — that's where the learning happens</li>
+                </ul>
+
+                <h3>Required Software</h3>
+                <ul>
+                    <li><strong>Unreal Engine 5.8</strong> (this course targets 5.8; most concepts apply to 5.x)</li>
+                    <li><strong>A C++ toolchain &amp; IDE</strong> — Visual Studio 2022 (Windows) or JetBrains Rider; Xcode on macOS. Lesson 1.3 walks through setup.</li>
+                    <li>Several GB of free disk space for engine, symbols, and build intermediates</li>
+                </ul>
+            </section>
+
+            <!-- Resources Section -->
+            <section id="resources" class="card">
+                <h2>📚 Additional Resources</h2>
+
+                <h3>Official Documentation</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/programming-with-cplusplus-in-unreal-engine" target="_blank" rel="noopener">Programming with C++ in Unreal Engine</a></li>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/epic-cplusplus-coding-standard-for-unreal-engine" target="_blank" rel="noopener">Epic C++ Coding Standard</a></li>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/API" target="_blank" rel="noopener">Unreal Engine C++ API Reference</a></li>
+                </ul>
+
+                <h3>Useful Links</h3>
+                <ul>
+                    <li><a href="https://forums.unrealengine.com/" target="_blank" rel="noopener">Unreal Engine Forums</a></li>
+                    <li><a href="https://dev.epicgames.com/community/" target="_blank" rel="noopener">Epic Developer Community</a></li>
+                    <li><a href="https://benui.ca/unreal/uproperty/" target="_blank" rel="noopener">BenUI — UPROPERTY / UFUNCTION specifier reference</a></li>
+                </ul>
+
+                <h3>Support</h3>
+                <p>If you have questions or need help:</p>
+                <ul>
+                    <li>Visit <a href="https://rays-home.netlify.app/contact">Ray's contact page</a></li>
+                    <li>Ask in the Epic Developer Community forums linked above</li>
+                </ul>
+            </section>
+
+            <!-- Search Section -->
+            <section class="card">
+                <h2>🔍 Search Course Content</h2>
+                <div style="position: relative;">
+                    <input type="text" id="search-input" placeholder="Search lessons, topics, or keywords..."
+                           aria-label="Search course content">
+                    <div id="search-results" style="display: none; position: absolute; top: 100%; left: 0; right: 0;"></div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <!-- JavaScript -->
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

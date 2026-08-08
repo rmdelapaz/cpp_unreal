@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Create your first Unreal Engine 5.8 C++ actor class, compile it, place it in a level, and use Live Coding to iterate in seconds.">
+    <meta name="author" content="Ray de la Paz">
+    <title>Your First C++ Class &amp; the Live Coding Loop — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 1</a></li>
+            <li aria-current="page">Lesson 1.5: Your First C++ Class &amp; the Live Coding Loop</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>🚀 Lesson 1.5: Your First C++ Class &amp; the Live Coding Loop</h1>
+                <p class="lead">Everything so far has been groundwork. Now you'll create a real C++ actor, make it do something visible, place it in a level, and use Live Coding to change its behavior without ever closing the editor. This is the loop you'll run thousands of times.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Create a C++ actor class with the editor's class wizard</li>
+                        <li>Read and understand every line of a generated actor's <code>.h</code> and <code>.cpp</code></li>
+                        <li>Add a <code>UPROPERTY</code>, log to the Output Log, and make the actor rotate each frame</li>
+                        <li>Use <strong>Live Coding</strong> to compile changes while the editor stays open</li>
+                        <li>Know when Live Coding is enough and when you need a full rebuild</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 60 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#create" class="toc-link">Creating the Class</a></li>
+                        <li><a href="#anatomy" class="toc-link">Anatomy of the Generated Files</a></li>
+                        <li><a href="#make-it-do" class="toc-link">Making It Do Something</a></li>
+                        <li><a href="#place" class="toc-link">Place, Compile, Play</a></li>
+                        <li><a href="#livecoding" class="toc-link">The Live Coding Loop</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="create" class="lesson-section">
+                <h2>Creating the Class</h2>
+                <p>Unreal generates the boilerplate for you. In the editor:</p>
+                <ol>
+                    <li>Open <strong>Tools → New C++ Class…</strong></li>
+                    <li>Choose <strong>Actor</strong> as the parent class, click Next</li>
+                    <li>Name it <code>SpinningCube</code>, confirm the module, and click <strong>Create Class</strong></li>
+                </ol>
+                <p>Unreal creates <code>SpinningCube.h</code> and <code>SpinningCube.cpp</code> in your <code>Source/</code> tree, adds them to the build, and compiles. The class name becomes <code>ASpinningCube</code> — the <code>A</code> prefix marks it as an actor (a convention enforced by the header tool; more on prefixes in Lesson 2.1).</p>
+
+                <div class="mermaid">
+                    graph LR
+                        A["New C++ Class wizard"] --> B["Generates SpinningCube.h + .cpp"]
+                        B --> C["Adds to module &amp; compiles"]
+                        C --> D["Appears in Content Browser → C++ Classes"]
+                </div>
+                <figure>
+                    <figcaption>Figure 1: The class wizard does the plumbing so you can start with logic. Behind the scenes it also regenerates project files.</figcaption>
+                </figure>
+            </section>
+
+            <section id="anatomy" class="lesson-section">
+                <h2>Anatomy of the Generated Files</h2>
+                <p>Here's what the wizard produces, annotated line by line. First the header:</p>
+
+                <pre><code class="language-cpp">// SpinningCube.h
+#pragma once                       // include guard — appears once per header
+
+#include "CoreMinimal.h"           // the lightweight base include for most headers
+#include "GameFramework/Actor.h"   // we derive from AActor, so we need its header
+#include "SpinningCube.generated.h" // MUST be last — generated reflection code
+
+UCLASS()                           // reflection macro: register this class
+class MYPROJECT_API ASpinningCube : public AActor
+{
+    GENERATED_BODY()               // expands to engine boilerplate for this class
+
+public:
+    ASpinningCube();               // constructor: set defaults, create components
+
+protected:
+    virtual void BeginPlay() override;   // called once when play starts
+
+public:
+    virtual void Tick(float DeltaTime) override;  // called every frame
+};</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 <code>MYPROJECT_API</code>?</h4>
+                    <p>That macro controls DLL export so other modules can use your class. The header tool defines it per module (it'll match your project's name). Leave it as generated — it matters when other modules link against yours.</p>
+                </div>
+
+                <p>Now the source file:</p>
+
+                <pre><code class="language-cpp">// SpinningCube.cpp
+#include "SpinningCube.h"
+
+// Constructor: runs when the object is created (in editor AND at runtime).
+ASpinningCube::ASpinningCube()
+{
+    // Tell the engine this actor wants Tick() called every frame.
+    // (It's off by default for performance — you opt in.)
+    PrimaryActorTick.bCanEverTick = true;
+}
+
+// Called once, when the game starts or the actor is spawned into a running level.
+void ASpinningCube::BeginPlay()
+{
+    Super::BeginPlay();   // ALWAYS call the base version first
+}
+
+// Called every frame; DeltaTime is seconds since the last frame.
+void ASpinningCube::Tick(float DeltaTime)
+{
+    Super::Tick(DeltaTime);   // ALWAYS call the base version
+}</code></pre>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Never forget <code>Super::</code></h4>
+                    <p>When you override an engine lifecycle function (<code>BeginPlay</code>, <code>Tick</code>, etc.), call <code>Super::</code> — it runs the base class's implementation, which does real engine work. Forgetting it causes subtle, hard-to-diagnose bugs.</p>
+                </div>
+            </section>
+
+            <section id="make-it-do" class="lesson-section">
+                <h2>Making It Do Something</h2>
+                <p>Let's give the cube a visible mesh, an exposed rotation-speed property, a startup log, and per-frame rotation. This touches everything from Module 1 at once. The header first:</p>
+
+                <pre><code class="language-cpp">// SpinningCube.h
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GameFramework/Actor.h"
+#include "SpinningCube.generated.h"
+
+class UStaticMeshComponent;   // forward declaration — we only hold a pointer here
+
+UCLASS()
+class MYPROJECT_API ASpinningCube : public AActor
+{
+    GENERATED_BODY()
+
+public:
+    ASpinningCube();
+
+protected:
+    virtual void BeginPlay() override;
+
+public:
+    virtual void Tick(float DeltaTime) override;
+
+    // The visible cube. VisibleAnywhere: shown but not reassignable in Details.
+    UPROPERTY(VisibleAnywhere, Category = "Spinning Cube")
+    UStaticMeshComponent* Mesh;
+
+    // Degrees per second. EditAnywhere + BlueprintReadWrite so designers and
+    // Blueprint subclasses can tune it. This appears in the Details panel.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Spinning Cube")
+    float RotationSpeed = 90.0f;
+};</code></pre>
+
+                <p>Now the implementation:</p>
+
+                <pre><code class="language-cpp">// SpinningCube.cpp
+#include "SpinningCube.h"
+#include "Components/StaticMeshComponent.h"   // full header — we call its members
+
+ASpinningCube::ASpinningCube()
+{
+    PrimaryActorTick.bCanEverTick = true;
+
+    // Create the mesh component and make it this actor's root.
+    // CreateDefaultSubobject is the constructor-only way to build components.
+    Mesh = CreateDefaultSubobject&lt;UStaticMeshComponent&gt;(TEXT("Mesh"));
+    RootComponent = Mesh;
+}
+
+void ASpinningCube::BeginPlay()
+{
+    Super::BeginPlay();
+
+    // Our first real log: %s prints an FString; the leading * converts
+    // GetName()'s FString to the raw characters the format expects.
+    UE_LOG(LogTemp, Warning, TEXT("%s is ready to spin at %.1f deg/s"),
+        *GetName(), RotationSpeed);
+}
+
+void ASpinningCube::Tick(float DeltaTime)
+{
+    Super::Tick(DeltaTime);
+
+    // Frame-rate independent rotation: multiplying by DeltaTime means the cube
+    // spins RotationSpeed degrees PER SECOND regardless of frame rate.
+    AddActorLocalRotation(FRotator(0.0f, RotationSpeed * DeltaTime, 0.0f));
+}</code></pre>
+
+                <div class="card card-success">
+                    <h4>✅ Why <code>* DeltaTime</code> matters</h4>
+                    <p>Without it, the cube would rotate <code>RotationSpeed</code> degrees <em>per frame</em> — spinning faster on fast machines. Multiplying by <code>DeltaTime</code> (seconds since last frame) makes motion depend on <em>time</em>, not frame rate. This is a universal game-programming habit; make it reflex.</p>
+                </div>
+
+                <div class="card card-accent">
+                    <h4>📖 <code>CreateDefaultSubobject</code></h4>
+                    <p>This is the <em>only</em> correct way to create a component from a constructor. It registers the component with the engine's object system. Using plain <code>new</code> here would break serialization and garbage collection — a rule we'll justify fully in Module 2 and Module 3.</p>
+                </div>
+            </section>
+
+            <section id="place" class="lesson-section">
+                <h2>Place, Compile, Play</h2>
+                <p>With the code written:</p>
+                <ol>
+                    <li><strong>Compile</strong> — press the <strong>Compile</strong> button in the editor toolbar (or build from your IDE). This triggers Live Coding (next section).</li>
+                    <li><strong>Assign a mesh</strong> — drag <code>ASpinningCube</code> from <strong>C++ Classes</strong> into the level, select it, and in the Details panel set the mesh component's Static Mesh to the engine's <code>Cube</code> (or make a Blueprint subclass with the mesh pre-set — the Module 6 way).</li>
+                    <li><strong>Press Play</strong> — the cube spins, and the Output Log shows your <code>"…is ready to spin at 90.0 deg/s"</code> line.</li>
+                    <li><strong>Tune it live</strong> — while stopped, change <code>RotationSpeed</code> in Details to <code>360</code> and play again. No recompile needed, because the value is data, not code.</li>
+                </ol>
+
+                <blockquote>
+                    <strong>💡 Data vs code:</strong> changing a <code>UPROPERTY</code> value in Details is instant — it's data on an instance. Changing the <em>logic</em> in <code>.cpp</code> requires a compile. Knowing which kind of change you're making tells you whether you need Live Coding.
+                </blockquote>
+            </section>
+
+            <section id="livecoding" class="lesson-section">
+                <h2>The Live Coding Loop</h2>
+                <p><strong>Live Coding</strong> lets you recompile C++ and patch it into the <em>running</em> editor — no restart. It's the feature that makes C++ iteration bearable. The loop:</p>
+
+                <div class="mermaid">
+                    graph LR
+                        A["Edit .cpp"] --> B["Press Ctrl+Alt+F11<br/>(or Compile button)"]
+                        B --> C["Live Coding recompiles"]
+                        C --> D["Editor patches the code in place"]
+                        D --> E["Test immediately"]
+                        E --> A
+                </div>
+                <figure>
+                    <figcaption>Figure 2: The Live Coding loop. <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F11</kbd> triggers a compile while the editor keeps running.</figcaption>
+                </figure>
+
+                <h3>What Live Coding handles well</h3>
+                <ul>
+                    <li>Changes to <strong>function bodies</strong> — new logic inside <code>Tick</code>, <code>BeginPlay</code>, your own methods</li>
+                    <li>Adjusting calculations, adding logs, fixing behavior</li>
+                </ul>
+
+                <h3>What needs a full rebuild (close editor, build, reopen)</h3>
+                <ul>
+                    <li>Adding or removing <strong>member variables</strong> or <strong>UPROPERTY</strong> declarations (changes the object's memory layout)</li>
+                    <li>Adding or removing <strong>classes</strong>, changing a class's <strong>parent</strong>, or editing headers structurally</li>
+                    <li>Changing reflection macros (new <code>UFUNCTION</code>, changed specifiers)</li>
+                </ul>
+
+                <div class="card card-warning">
+                    <h4>⚠️ The rule of thumb</h4>
+                    <p><strong>Edits inside <code>.cpp</code> function bodies → Live Coding. Edits to <code>.h</code> structure (new members, new classes, changed inheritance) → close the editor and do a full build.</strong> Trying to Live-Code a header layout change is the most common source of "why didn't my change take?" — and occasionally of instability. When in doubt, full rebuild.</p>
+                </div>
+
+                <div class="card card-success">
+                    <h4>✅ Pro Tip</h4>
+                    <p>Live Coding is enabled by default in 5.8. You'll see its status in the bottom-right of the editor. If a Live Coding patch ever leaves the editor in a weird state, a full close-and-rebuild always resets you to solid ground.</p>
+                </div>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: Extend the cube</h3>
+                    <p><strong>Objective:</strong> Practice the write → Live Code → test loop and feel the Live-Coding boundary.</p>
+                    <ol>
+                        <li>Add a bobbing motion: in <code>Tick</code>, also move the cube up and down over time. (Hint: accumulate time and use <code>FMath::Sin</code>, then <code>AddActorLocalOffset</code>.)</li>
+                        <li>Compile with <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>F11</kbd> and confirm the change appears <em>without</em> restarting the editor.</li>
+                        <li>Now add a <em>new</em> <code>UPROPERTY float BobHeight</code>. Try Live Coding — note that this header change needs a full rebuild. Do the rebuild and confirm <code>BobHeight</code> appears in Details.</li>
+                    </ol>
+
+                    <details>
+                        <summary>💡 Hint — the bob in Tick</summary>
+                        <pre><code class="language-cpp">// Add a member: float RunningTime = 0.0f;  (in the header — needs a rebuild)
+RunningTime += DeltaTime;
+const float Offset = FMath::Sin(RunningTime) * BobHeight * DeltaTime;
+AddActorLocalOffset(FVector(0.0f, 0.0f, Offset));</code></pre>
+                    </details>
+
+                    <details>
+                        <summary>✅ What you should observe</summary>
+                        <p>Step 1's <em>logic</em> change (if you hardcode values) Live-Codes fine. The moment you add the <code>RunningTime</code> or <code>BobHeight</code> <em>members</em> in the header, Live Coding can't apply it and you need a full rebuild — exactly the boundary from the rule of thumb.</p>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> Why multiply rotation by <code>DeltaTime</code>?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — it makes motion frame-rate independent (per second, not per frame).">A) To make motion frame-rate independent</button>
+                            <button class="quiz-option" data-correct="false" data-hint="It has nothing to do with the log.">B) To enable logging</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Ticking is enabled separately.">C) To turn on Tick</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> Which change can Live Coding apply without an editor restart?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — function-body edits are Live Coding's sweet spot.">A) New logic inside <code>Tick()</code>'s body</button>
+                            <button class="quiz-option" data-correct="false" data-hint="That changes memory layout — needs a rebuild.">B) A new <code>UPROPERTY</code> member variable</button>
+                            <button class="quiz-option" data-correct="false" data-hint="Structural header change — needs a rebuild.">C) Changing the class's parent</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> What's the correct way to create a component in a constructor?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="Plain new breaks serialization &amp; GC.">A) <code>new UStaticMeshComponent()</code></button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — CreateDefaultSubobject registers the component with the object system.">B) <code>CreateDefaultSubobject&lt;UStaticMeshComponent&gt;(...)</code></button>
+                            <button class="quiz-option" data-correct="false" data-hint="There's no such global.">C) <code>MakeComponent(...)</code></button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li>The <strong>New C++ Class</strong> wizard generates a compile-ready actor; the <code>A</code> prefix marks actors.</li>
+                        <li>Always call <code>Super::</code> when overriding lifecycle functions like <code>BeginPlay</code> and <code>Tick</code>.</li>
+                        <li>Create components in the constructor with <code>CreateDefaultSubobject&lt;T&gt;</code> — never plain <code>new</code>.</li>
+                        <li>Multiply per-frame motion by <code>DeltaTime</code> for frame-rate independence; expose tunables with <code>UPROPERTY</code>.</li>
+                        <li><strong>Live Coding</strong> hot-patches <code>.cpp</code> body edits into the running editor; structural <code>.h</code> changes need a full rebuild.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/live-coding-to-recompile-unreal-engine-applications-at-runtime" target="_blank" rel="noopener">Live Coding (Epic)</a></li>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-engine-cpp-quick-start" target="_blank" rel="noopener">Unreal Engine C++ Quick Start (Epic)</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p>You've shipped your first working C++ actor — congratulations, that's the hardest first step. <strong>Module 2</strong> goes under the hood: the reflection system that made <code>UCLASS</code> and <code>UPROPERTY</code> work, Unreal's own types and containers, and the memory model that explains why we never use plain <code>new</code>.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Module 1 complete!</h3>
+                    <p>You can create, compile, and iterate C++ in Unreal. Now let's understand what's really happening.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m01_l04_cpp_refresher_for_unreal.html" class="prev-lesson">← Previous: A C++ Refresher, Unreal-Flavored</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m02_l01_project_and_module_anatomy.html" class="next-lesson">Next: Project &amp; Module Anatomy →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>

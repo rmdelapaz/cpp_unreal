@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="A programmer-focused tour of the Unreal Engine 5.8 editor: where your C++ classes live, how the editor relates to your source, and the panels you'll use daily.">
+    <meta name="author" content="Ray de la Paz">
+    <title>The Unreal Editor for Programmers — C++ for Unreal Engine</title>
+    <link rel="stylesheet" href="styles/main.css">
+    <link rel="icon" type="image/png" href="favicon.png">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        window.__mermaid = mermaid;
+        const isDark = localStorage.getItem('theme') === 'dark' ||
+            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: isDark ? 'dark' : 'default',
+            themeVariables: isDark
+                ? { primaryColor: '#334155', primaryTextColor: '#e2e8f0', primaryBorderColor: '#6366f1', lineColor: '#94a3b8', secondaryColor: '#1e293b', tertiaryColor: '#0f172a' }
+                : { primaryColor: '#eff6ff', primaryTextColor: '#1e293b', primaryBorderColor: '#3b82f6', lineColor: '#64748b', secondaryColor: '#f8fafc', tertiaryColor: '#f1f5f9' }
+        });
+    </script>
+</head>
+<body>
+    <a href="#main-content" class="skip-to-main">Skip to main content</a>
+
+    <nav class="main-nav">
+        <div class="nav-container">
+            <a href="index.html" class="nav-logo">C++ for Unreal Engine</a>
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" aria-expanded="false" aria-controls="nav-links">☰</button>
+            <div class="nav-links" id="nav-links">
+                <a href="index.html">Home</a>
+                <a href="index.html#modules">All Modules</a>
+                <span class="nav-divider"></span>
+                <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+                <a href="https://rays-home.netlify.app/contact">Contact</a>
+                <button id="theme-toggle" aria-label="Toggle dark/light mode">🌙</button>
+            </div>
+        </div>
+    </nav>
+
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+        <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="index.html#modules">Module 1</a></li>
+            <li aria-current="page">Lesson 1.2: The Unreal Editor for Programmers</li>
+        </ul>
+    </nav>
+
+    <main id="main-content">
+        <div class="container">
+            <header>
+                <h1>🧭 Lesson 1.2: The Unreal Editor for Programmers</h1>
+                <p class="lead">You don't need to be an artist to use the editor, but you do need to know where your code shows up and how the editor and your source files stay in sync. This is the editor tour written for someone who thinks in classes and files.</p>
+
+                <div class="card card-info">
+                    <h2>🎯 Learning Objectives</h2>
+                    <p>By the end of this lesson, you will be able to:</p>
+                    <ul>
+                        <li>Identify the editor panels a programmer uses most and what each is for</li>
+                        <li>Explain how a C++ class relates to the editor's Content Browser and the Details panel</li>
+                        <li>Navigate the on-disk project layout and match folders to what you see in the editor</li>
+                        <li>Use the Output Log, Play-In-Editor (PIE), and the C++ class wizard confidently</li>
+                    </ul>
+                    <p><strong>Estimated Time:</strong> 45 minutes</p>
+                    <p><strong>Engine Version:</strong> Unreal Engine 5.8</p>
+                </div>
+            </header>
+
+            <details class="card toc-card" open>
+                <summary aria-label="Toggle table of contents">
+                    <span class="toc-icon" aria-hidden="true">📑</span>
+                    <span class="toc-label">In This Lesson</span>
+                    <span class="toc-chevron" aria-hidden="true">▾</span>
+                </summary>
+                <nav aria-label="Table of Contents">
+                    <ol>
+                        <li><a href="#layout" class="toc-link">The Editor at a Glance</a></li>
+                        <li><a href="#panels" class="toc-link">Panels a Programmer Lives In</a></li>
+                        <li><a href="#code-to-editor" class="toc-link">How Code Reaches the Editor</a></li>
+                        <li><a href="#ondisk" class="toc-link">The Project on Disk</a></li>
+                        <li><a href="#pie" class="toc-link">Play-In-Editor &amp; the Output Log</a></li>
+                        <li><a href="#exercise" class="toc-link">Exercise &amp; Quiz</a></li>
+                        <li><a href="#summary" class="toc-link">Summary</a></li>
+                    </ol>
+                </nav>
+            </details>
+
+            <section id="layout" class="lesson-section">
+                <h2>The Editor at a Glance</h2>
+                <p>When you open a project, the Unreal Editor presents a default layout. As a programmer, five regions matter to you far more than the rest:</p>
+
+                <div class="mermaid">
+                    graph TB
+                        Toolbar["Toolbar — Play, Platforms, Settings"]
+                        Viewport["Viewport — the 3D scene"]
+                        Outliner["Outliner — actors in the level"]
+                        Details["Details — properties of the selection"]
+                        Content["Content Browser — all project assets"]
+                        Log["Output Log — engine + your UE_LOG output"]
+                        Toolbar --- Viewport
+                        Viewport --- Outliner
+                        Outliner --- Details
+                        Details --- Content
+                        Content --- Log
+                </div>
+                <figure>
+                    <figcaption>Figure 1: The regions a C++ programmer touches most. Artists care about the Viewport; you'll care about Details, Content Browser, and the Output Log.</figcaption>
+                </figure>
+
+                <p>You do not have to master lighting, materials, or modeling to be productive. Your job is to write classes; the editor's job is to let you (and designers) instantiate, configure, and observe them.</p>
+            </section>
+
+            <section id="panels" class="lesson-section">
+                <h2>Panels a Programmer Lives In</h2>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Panel</th><th>What it is</th><th>Why you care</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><td><strong>Content Browser</strong></td><td>Browser of all assets: Blueprints, materials, levels, and your C++ classes under a "C++ Classes" folder</td><td>This is where you'll create Blueprint subclasses of your C++ classes</td></tr>
+                            <tr><td><strong>Details</strong></td><td>Shows the editable properties of whatever is selected</td><td>Every <code>UPROPERTY</code> you expose appears here — this is your UI, for free</td></tr>
+                            <tr><td><strong>Outliner</strong></td><td>The list of actors placed in the current level</td><td>Select an actor to inspect the C++ (or Blueprint) instance driving it</td></tr>
+                            <tr><td><strong>Output Log</strong></td><td>Live stream of engine messages and your logs</td><td>Your <code>UE_LOG</code> and on-screen debug land here — your printf</td></tr>
+                            <tr><td><strong>Toolbar → Play</strong></td><td>Runs the game inside the editor (PIE)</td><td>Your fastest way to test C++ behavior without packaging</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="card card-success">
+                    <h4>✅ Pro Tip</h4>
+                    <p>Enable <strong>Window → Output Log</strong> and dock it somewhere always-visible before you write any C++. You'll be reading it constantly — for your own logs and for compile/Live Coding messages.</p>
+                </div>
+            </section>
+
+            <section id="code-to-editor" class="lesson-section">
+                <h2>How Code Reaches the Editor</h2>
+                <p>This is the concept that trips up newcomers. When you write a C++ class and compile, the editor doesn't magically "see" your source files. Instead, a build step compiles your module into a binary (a DLL on Windows), and the editor loads that binary. Your classes then appear through the <strong>reflection system</strong> — the same bridge from Lesson 1.1.</p>
+
+                <div class="mermaid">
+                    graph LR
+                        A["You edit .h / .cpp"] --> B["Build compiles the module"]
+                        B --> C["Editor loads the binary"]
+                        C --> D["Reflection registers your UCLASS"]
+                        D --> E["Class appears in Content Browser<br/>UPROPERTYs appear in Details"]
+                </div>
+                <figure>
+                    <figcaption>Figure 2: The path from a saved source file to a usable class in the editor. Module 2 explains the reflection step in depth.</figcaption>
+                </figure>
+
+                <p>Two practical consequences follow immediately:</p>
+                <ul>
+                    <li>A <code>UCLASS</code> you write shows up under <strong>Content Browser → C++ Classes → [YourProject]</strong>. You can right-click it to create a Blueprint child.</li>
+                    <li>A property you mark with <code>UPROPERTY(EditAnywhere)</code> automatically appears in the <strong>Details</strong> panel — no UI code needed. The editor builds the widget from the type.</li>
+                </ul>
+
+                <blockquote>
+                    <strong>💡 Why this matters:</strong> "Expose it and the editor draws it" is one of Unreal's superpowers. Much of Module 2 and Module 6 is about controlling exactly how your C++ surfaces here.
+                </blockquote>
+            </section>
+
+            <section id="ondisk" class="lesson-section">
+                <h2>The Project on Disk</h2>
+                <p>The editor is a view onto a folder structure. Knowing that structure keeps you oriented, especially when things go wrong. A C++ project looks like this:</p>
+
+                <pre><code class="language-text">MyProject/
+├── MyProject.uproject        # Project descriptor (modules, plugins, engine version)
+├── Config/                   # .ini settings (DefaultEngine.ini, DefaultGame.ini...)
+├── Content/                  # All assets you see in the Content Browser (.uasset/.umap)
+├── Source/                   # Your C++ lives here
+│   ├── MyProject/            # A game module
+│   │   ├── MyProject.Build.cs        # Module build rules & dependencies
+│   │   ├── MyProject.h / .cpp        # Module implementation
+│   │   └── (your .h and .cpp files)
+│   ├── MyProject.Target.cs           # Build target: the game
+│   └── MyProjectEditor.Target.cs     # Build target: the editor
+├── Plugins/                  # Optional plugins (often with their own Source/)
+├── Binaries/                 # Compiled output (generated — not committed)
+├── Intermediate/             # Build scratch (generated — safe to delete)
+└── Saved/                    # Logs, autosaves, config caches (generated)</code></pre>
+
+                <div class="card card-accent">
+                    <h4>📖 Two folders, two worlds</h4>
+                    <p><strong><code>Content/</code></strong> holds <em>assets</em> (binary <code>.uasset</code> files) — what you see in the Content Browser. <strong><code>Source/</code></strong> holds <em>code</em> (text <code>.h</code>/<code>.cpp</code>). A Blueprint lives in <code>Content/</code>; a C++ class lives in <code>Source/</code>. They meet through the reflection system.</p>
+                </div>
+
+                <div class="card card-warning">
+                    <h4>⚠️ Watch Out</h4>
+                    <p><code>Binaries/</code>, <code>Intermediate/</code>, <code>Saved/</code>, and <code>DerivedDataCache/</code> are all <strong>generated</strong>. Never commit them to source control, and deleting them (then regenerating) is a standard fix for corrupted builds. We'll set up a proper <code>.gitignore</code> in Lesson 1.3.</p>
+                </div>
+            </section>
+
+            <section id="pie" class="lesson-section">
+                <h2>Play-In-Editor &amp; the Output Log</h2>
+                <p>The <strong>Play</strong> button (or <kbd>Alt</kbd>+<kbd>P</kbd>) launches <em>Play-In-Editor</em> — your game running inside the editor process. It's the tightest test loop you have: no packaging, no separate launch. For C++ work, PIE plus the Output Log <em>is</em> your debugger's front porch.</p>
+
+                <p>Here's the smallest possible taste of code you'll write to see something in that log — don't worry about the syntax yet, we build up to it across the module:</p>
+
+                <pre><code class="language-cpp">// Somewhere in an actor's BeginPlay(), which runs when play starts:
+void AMyActor::BeginPlay()
+{
+    Super::BeginPlay();
+
+    // This line prints to the Output Log — your first "Hello, Unreal".
+    UE_LOG(LogTemp, Warning, TEXT("Hello from C++! Actor: %s"), *GetName());
+}</code></pre>
+
+                <p>When you press Play, <code>Hello from C++!</code> appears in the Output Log, tagged as a warning (which makes it easy to spot in yellow). We cover <code>UE_LOG</code> properly in Lesson 2.6, but you'll be leaning on it from your very first class.</p>
+
+                <div class="card card-success">
+                    <h4>✅ Pro Tip</h4>
+                    <p>You can filter the Output Log by category and verbosity. Typing your log category name (e.g. a custom <code>LogMyGame</code>) into its search box hides the engine's firehose so you see only your own messages.</p>
+                </div>
+            </section>
+
+            <section id="exercise" class="lesson-section">
+                <h2>Hands-on Exercise &amp; Quiz</h2>
+
+                <div class="card card-info">
+                    <h3>🏋️ Exercise: Map the editor to the disk</h3>
+                    <p><strong>Objective:</strong> Cement the editor ↔ filesystem relationship. If you have Unreal 5.8 installed you can do this live; if not, reason it through from Figure 2 and the tree above.</p>
+                    <ol>
+                        <li>In an open project, find <strong>Content Browser → C++ Classes</strong>. Which on-disk folder do those classes correspond to?</li>
+                        <li>Select any actor in the Outliner and look at the Details panel. Where did those editable fields come from, in C++ terms?</li>
+                        <li>Name two folders you would add to <code>.gitignore</code> and say why.</li>
+                    </ol>
+
+                    <details>
+                        <summary>✅ Answers</summary>
+                        <ul>
+                            <li><strong>1.</strong> The <code>Source/</code> tree — C++ Classes mirror your compiled module's classes, whose source is in <code>Source/MyProject/</code>.</li>
+                            <li><strong>2.</strong> From <code>UPROPERTY(EditAnywhere)</code> (or similar) declarations — the editor generates each widget from the property's type and specifiers.</li>
+                            <li><strong>3.</strong> <code>Binaries/</code>, <code>Intermediate/</code>, <code>Saved/</code>, <code>DerivedDataCache/</code> — all generated, large, and machine-specific; committing them causes bloat and conflicts.</li>
+                        </ul>
+                    </details>
+                </div>
+
+                <div class="card quiz-container">
+                    <h3>🎯 Quick Quiz</h3>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 1:</strong> A <code>UPROPERTY(EditAnywhere)</code> on your C++ actor shows up in which panel?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="That lists assets.">A) Content Browser</button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — the Details panel renders editable properties of the selection.">B) Details</button>
+                            <button class="quiz-option" data-correct="false" data-hint="That lists placed actors.">C) Outliner</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 2:</strong> Where does your C++ source physically live in the project?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="false" data-hint="That holds binary assets.">A) Content/</button>
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — .h/.cpp files live under Source/.">B) Source/</button>
+                            <button class="quiz-option" data-correct="false" data-hint="That's generated build output.">C) Binaries/</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+
+                    <div class="quiz-question">
+                        <p><strong>Question 3:</strong> What does Play-In-Editor (PIE) give a C++ programmer?</p>
+                        <div class="quiz-options">
+                            <button class="quiz-option" data-correct="true" data-explanation="Correct — PIE runs the game in-editor for the fastest test loop.">A) The fastest loop to test code without packaging</button>
+                            <button class="quiz-option" data-correct="false" data-hint="PIE doesn't compile your code.">B) A way to compile C++ modules</button>
+                            <button class="quiz-option" data-correct="false" data-hint="That's what a build does.">C) A tool to generate project files</button>
+                        </div>
+                        <div class="quiz-feedback"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="summary" class="lesson-section">
+                <h2>Summary</h2>
+
+                <div class="card card-success">
+                    <h3>🎉 Key Takeaways</h3>
+                    <ul>
+                        <li>As a programmer you live mainly in the <strong>Content Browser, Details, Outliner, and Output Log</strong>, plus the <strong>Play</strong> button.</li>
+                        <li>Your code reaches the editor by being <strong>compiled into a module binary</strong> that the editor loads; the <strong>reflection system</strong> registers your classes and properties.</li>
+                        <li><code>Content/</code> holds binary assets; <code>Source/</code> holds your <code>.h</code>/<code>.cpp</code>. They meet through reflection.</li>
+                        <li><code>Binaries/</code>, <code>Intermediate/</code>, and <code>Saved/</code> are generated — never commit them.</li>
+                        <li><strong>PIE + Output Log</strong> is your everyday test-and-observe loop.</li>
+                    </ul>
+                </div>
+
+                <h3>📚 Additional Resources</h3>
+                <ul>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-editor-interface" target="_blank" rel="noopener">Unreal Editor Interface (Epic)</a></li>
+                    <li><a href="https://dev.epicgames.com/documentation/en-us/unreal-engine/unreal-engine-directory-structure" target="_blank" rel="noopener">Unreal Engine Directory Structure (Epic)</a></li>
+                </ul>
+
+                <h3>🚀 What's Next?</h3>
+                <p>You can find your way around. Now let's make the machine ready to compile: installing and configuring the C++ toolchain and IDE so your first build actually succeeds.</p>
+
+                <div class="card card-accent" style="text-align: center; padding: 2rem;">
+                    <h3>🎉 Lesson complete!</h3>
+                    <p>The terrain makes sense. Let's set up your tools.</p>
+                </div>
+            </section>
+
+            <nav class="lesson-nav" aria-label="Lesson Navigation">
+                <a href="m01_l01_why_cpp_in_unreal.html" class="prev-lesson">← Previous: Why C++ in Unreal</a>
+                <a href="index.html" class="home-link">🏠 Course Home</a>
+                <a href="m01_l03_cpp_toolchain_setup.html" class="next-lesson">Next: Setting Up the C++ Toolchain →</a>
+            </nav>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <p>&copy; 2026 Ray de la Paz. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="https://rays-home.netlify.app/">Ray's House of Fun</a>
+            <a href="https://rays-home.netlify.app/contact">Contact</a>
+            <a href="#" id="print-button">Print Page</a>
+        </div>
+        <p><small>Press <kbd>?</kbd> for keyboard shortcuts</small></p>
+    </footer>
+
+    <script src="js/clipboard.js"></script>
+    <script src="js/course-enhancements.js"></script>
+</body>
+</html>
